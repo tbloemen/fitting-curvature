@@ -1,0 +1,7 @@
+[project]
+name = "fitting-curvature"
+version = "0.1.0"
+description = "Learn the curvature of your data and fit an embedding into it."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
