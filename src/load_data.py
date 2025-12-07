@@ -15,7 +15,7 @@ def load_mnist(kind: DatasetKind) -> tuple[torch.Tensor, torch.Tensor]:
     train_dataset = datasets.MNIST(
         root="data", train=True, download=True, transform=ToTensor()
     )
-    train_x = torch.stack([img for img, _ in train_dataset])
+    train_x = torch.stack([img for img, _ in train_dataset]).reshape(-1, 784)
     train_y = torch.tensor([label for _, label in train_dataset])
 
     if kind == DatasetKind.TRAIN:
@@ -24,7 +24,7 @@ def load_mnist(kind: DatasetKind) -> tuple[torch.Tensor, torch.Tensor]:
     test_dataset = datasets.MNIST(
         root="data", train=False, download=True, transform=ToTensor()
     )
-    test_x = torch.stack([img for img, _ in test_dataset])
+    test_x = torch.stack([img for img, _ in test_dataset]).reshape(-1, 784)
     test_y = torch.tensor([label for _, label in test_dataset])
 
     if kind == DatasetKind.TEST:
@@ -32,10 +32,10 @@ def load_mnist(kind: DatasetKind) -> tuple[torch.Tensor, torch.Tensor]:
     return torch.concat((train_x, test_x)), torch.concat((train_y, test_y))
 
 
-def load_data(dataset: str):
+def load_raw_data(dataset: str, kind=DatasetKind.ALL):
     stripped_dataset = dataset.lower().strip()
     # MNIST only for now.
     if stripped_dataset == "mnist":
-        return load_mnist(DatasetKind.ALL)
+        return load_mnist(kind)
 
     raise ValueError("Dataset not recognised: ", stripped_dataset)
