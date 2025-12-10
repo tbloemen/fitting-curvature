@@ -10,7 +10,7 @@ def main():
     X = X[:1000]
 
     embed_dim = 10  # Embedding dimension
-    n_iterations = 500
+    n_iterations = 2000
 
     for k in [-1, 0, 1]:
         print(f"\n{'=' * 60}")
