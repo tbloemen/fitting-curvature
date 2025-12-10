@@ -25,6 +25,8 @@ def calculate_distance_matrix(X: Tensor) -> Tensor:
     A = torch.zeros((N, N))
     for i, v1 in enumerate(X):
         for j, v2 in enumerate(X):
+            if i == j:
+                continue
             similarity = similarity_metric(v1, v2)
             A[i, j] = similarity
 
