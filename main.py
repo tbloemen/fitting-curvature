@@ -1,3 +1,5 @@
+import torch
+
 from src.embedding import fit_embedding
 from src.load_data import load_raw_data
 from src.matrices import calculate_distance_matrix
@@ -6,19 +8,29 @@ from src.visualisation import default_plot, project_to_2d
 
 def main():
     print("Hello from fitting-curvature!")
+
+    # Check device availability
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
+    if torch.cuda.is_available():
+        print(f"GPU: {torch.cuda.get_device_name(0)}")
+
     X, _ = load_raw_data("mnist")
-    X = X[:1000]
+    X = X[:1000]  # Use first 1000 samples to fit in GPU memory
+    X = X.to(device)
 
     embed_dim = 10  # Embedding dimension
-    n_iterations = 2000
+    n_iterations = 500
+
+    # Calculate distance matrix in original space (stays on device)
+    print("\nCalculating distance matrix...")
+    A = calculate_distance_matrix(X)
+    print(f"Distance matrix shape: {A.shape}, device: {A.device}")
 
     for k in [-1, 0, 1]:
         print(f"\n{'=' * 60}")
         print(f"Training embedding with curvature k = {k}")
         print(f"{'=' * 60}")
-
-        # Calculate distance matrix in original space
-        A = calculate_distance_matrix(X)
 
         # Train the embedding
         model = fit_embedding(
@@ -30,8 +42,8 @@ def main():
             verbose=True,
         )
 
-        # Get the learned embeddings
-        embeddings = model.get_embeddings().detach().numpy()
+        # Get the learned embeddings (move to CPU for visualization)
+        embeddings = model.get_embeddings().detach().cpu().numpy()
 
         # Visualize the first two dimensions
         x_proj, y_proj = project_to_2d(embeddings, i=1, j=2, k=k)

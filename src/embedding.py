@@ -16,23 +16,38 @@ class ConstantCurvatureEmbedding(nn.Module):
     """
 
     def __init__(
-        self, n_points: int, embed_dim: int, curvature: float, init_scale: float = 0.1
+        self,
+        n_points: int,
+        embed_dim: int,
+        curvature: float,
+        init_scale: float = 0.1,
+        device: torch.device | str | None = None,
     ):
         super().__init__()
         self.n_points = n_points
         self.embed_dim = embed_dim
         self.curvature = curvature
 
+        # Set device (defaults to CUDA if available, else CPU)
+        if device is None:
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        else:
+            self.device = torch.device(device)
+
         # Compute radius for curved spaces (store as buffer, not parameter)
         # We precompute radius_squared since it's used frequently in distance calculations
         if curvature != 0:
-            radius_val = 1.0 / torch.sqrt(torch.tensor(abs(curvature)))
+            radius_val = 1.0 / torch.sqrt(
+                torch.tensor(abs(curvature), device=self.device)
+            )
             self.register_buffer("radius", radius_val)
             self.register_buffer("radius_squared", radius_val * radius_val)
         else:
             # Dummy values for Euclidean (not used but stored for consistency)
-            self.register_buffer("radius", torch.tensor(1.0))
-            self.register_buffer("radius_squared", torch.tensor(1.0))
+            self.register_buffer("radius", torch.tensor(1.0, device=self.device))
+            self.register_buffer(
+                "radius_squared", torch.tensor(1.0, device=self.device)
+            )
 
         # Initialize embeddings based on curvature
         # For constrained manifolds (sphere/hyperboloid), we only parameterize the free coordinates.
@@ -46,14 +61,16 @@ class ConstantCurvatureEmbedding(nn.Module):
             self.ambient_dim = embed_dim + 1
             self.param_dim = embed_dim
             self.points = nn.Parameter(
-                torch.randn(n_points, self.param_dim) * init_scale
+                torch.randn(n_points, self.param_dim, device=self.device) * init_scale
             )
 
         elif curvature == 0:
             # Euclidean: points in R^d (no constraint)
             self.ambient_dim = embed_dim
             self.param_dim = embed_dim
-            self.points = nn.Parameter(torch.randn(n_points, embed_dim) * init_scale)
+            self.points = nn.Parameter(
+                torch.randn(n_points, embed_dim, device=self.device) * init_scale
+            )
 
         else:  # curvature < 0
             # Hyperbolic: hyperboloid model in R^(d+1)
@@ -62,7 +79,7 @@ class ConstantCurvatureEmbedding(nn.Module):
             self.ambient_dim = embed_dim + 1
             self.param_dim = embed_dim
             self.points = nn.Parameter(
-                torch.randn(n_points, self.param_dim) * init_scale
+                torch.randn(n_points, self.param_dim, device=self.device) * init_scale
             )
 
     def project_to_manifold(self) -> Tensor:
@@ -176,6 +193,33 @@ class ConstantCurvatureEmbedding(nn.Module):
         return self.project_to_manifold()
 
 
+def get_scale_and_n(
+    distance_matrix: Tensor, embed_dim: int, verbose=True
+) -> tuple[int, float]:
+    n_points = distance_matrix.shape[0]
+
+    # Compute statistics from the distance matrix to inform initialization
+    # Exclude diagonal (zero distances) when computing statistics
+    mask = ~torch.eye(n_points, dtype=torch.bool, device=distance_matrix.device)
+    distances_no_diag = distance_matrix[mask]
+
+    mean_distance = distances_no_diag.mean().item()
+    std_distance = distances_no_diag.std().item()
+
+    # Use a scale that produces reasonable initial distances in embedding space
+    # We want initial random distances to be on the same order as target distances
+    init_scale = (
+        mean_distance
+        / (2 * torch.sqrt(torch.tensor(embed_dim, dtype=torch.float32))).item()
+    )
+
+    if verbose:
+        print(f"Distance statistics: mean={mean_distance:.4f}, std={std_distance:.4f}")
+        print(f"Initialization scale: {init_scale:.4f}")
+
+    return n_points, init_scale
+
+
 def fit_embedding(
     distance_matrix: Tensor,
     embed_dim: int,
@@ -183,6 +227,7 @@ def fit_embedding(
     n_iterations: int = 1000,
     lr: float = 0.01,
     verbose: bool = True,
+    device: torch.device | str | None = None,
 ) -> ConstantCurvatureEmbedding:
     """
     Fit a constant curvature embedding to preserve given distances.
@@ -201,17 +246,31 @@ def fit_embedding(
         Learning rate
     verbose : bool
         Print progress
+    device : torch.device, str, or None
+        Device to use for computation (defaults to CUDA if available, else CPU)
 
     Returns
     -------
     ConstantCurvatureEmbedding
         Fitted embedding model
     """
+    # Set device (defaults to CUDA if available, else CPU)
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    else:
+        device = torch.device(device)
+
+    if verbose:
+        print(f"Using device: {device}")
+
+    # Move distance matrix to device
+    distance_matrix = distance_matrix.to(device)
+
     n_points = distance_matrix.shape[0]
 
     # Compute statistics from the distance matrix to inform initialization
     # Exclude diagonal (zero distances) when computing statistics
-    mask = ~torch.eye(n_points, dtype=torch.bool)
+    mask = ~torch.eye(n_points, dtype=torch.bool, device=device)
     distances_no_diag = distance_matrix[mask]
 
     mean_distance = distances_no_diag.mean().item()
@@ -228,9 +287,9 @@ def fit_embedding(
         print(f"Distance statistics: mean={mean_distance:.4f}, std={std_distance:.4f}")
         print(f"Initialization scale: {init_scale:.4f}")
 
-    # Initialize model with data-driven scale
+    # Initialize model with data-driven scale on the specified device
     model = ConstantCurvatureEmbedding(
-        n_points, embed_dim, curvature, init_scale=init_scale
+        n_points, embed_dim, curvature, init_scale=init_scale, device=device
     )
 
     # Optimizer
