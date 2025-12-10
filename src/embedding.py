@@ -15,63 +15,108 @@ class ConstantCurvatureEmbedding(nn.Module):
     - k < 0: Hyperbolic (hyperboloid model in R^(d+1))
     """
 
-    def __init__(self, n_points: int, embed_dim: int, curvature: float):
+    def __init__(
+        self, n_points: int, embed_dim: int, curvature: float, init_scale: float = 0.1
+    ):
         super().__init__()
         self.n_points = n_points
         self.embed_dim = embed_dim
         self.curvature = curvature
 
+        # Compute radius for curved spaces (store as buffer, not parameter)
+        # We precompute radius_squared since it's used frequently in distance calculations
+        if curvature != 0:
+            radius_val = 1.0 / torch.sqrt(torch.tensor(abs(curvature)))
+            self.register_buffer("radius", radius_val)
+            self.register_buffer("radius_squared", radius_val * radius_val)
+        else:
+            # Dummy values for Euclidean (not used but stored for consistency)
+            self.register_buffer("radius", torch.tensor(1.0))
+            self.register_buffer("radius_squared", torch.tensor(1.0))
+
         # Initialize embeddings based on curvature
+        # For constrained manifolds (sphere/hyperboloid), we only parameterize the free coordinates.
+        # The constrained coordinate is computed from the manifold equation.
+        # This ensures gradients respect the geometry.
+
         if curvature > 0:
             # Spherical: points on sphere in R^(d+1)
+            # Parameterize only d coordinates (x1, ..., xd)
+            # Compute x0 from constraint: x0^2 + x1^2 + ... + xd^2 = r^2
             self.ambient_dim = embed_dim + 1
-            points = torch.randn(n_points, self.ambient_dim)
-            # Project to sphere
-            radius = 1.0 / torch.sqrt(torch.tensor(curvature))
-            points = radius * points / points.norm(dim=1, keepdim=True)
-            self.points = nn.Parameter(points)
+            self.param_dim = embed_dim
+            self.points = nn.Parameter(
+                torch.randn(n_points, self.param_dim) * init_scale
+            )
 
         elif curvature == 0:
-            # Euclidean: points in R^d
+            # Euclidean: points in R^d (no constraint)
             self.ambient_dim = embed_dim
-            self.points = nn.Parameter(torch.randn(n_points, embed_dim) * 0.01)
+            self.param_dim = embed_dim
+            self.points = nn.Parameter(torch.randn(n_points, embed_dim) * init_scale)
 
         else:  # curvature < 0
             # Hyperbolic: hyperboloid model in R^(d+1)
+            # Parameterize only spatial coordinates (x1, ..., xd)
+            # Compute time x0 from constraint: x0^2 - x1^2 - ... - xd^2 = r^2
             self.ambient_dim = embed_dim + 1
-            radius = 1.0 / torch.sqrt(torch.tensor(-curvature))
-
-            # Initialize on hyperboloid: x0^2 - x1^2 - ... - xd^2 = r^2
-            spatial = torch.randn(n_points, embed_dim) * 0.1
-            # Compute time coordinate to satisfy constraint
-            time = torch.sqrt(radius**2 + (spatial**2).sum(dim=1, keepdim=True))
-            points = torch.cat([time, spatial], dim=1)
-            self.points = nn.Parameter(points)
+            self.param_dim = embed_dim
+            self.points = nn.Parameter(
+                torch.randn(n_points, self.param_dim) * init_scale
+            )
 
     def project_to_manifold(self) -> Tensor:
-        """Project points back to the manifold (sphere or hyperboloid)."""
+        """
+        Map free parameters to manifold coordinates.
+
+        For spherical and hyperbolic, we only optimize free coordinates and
+        compute the constrained coordinate from the manifold equation.
+        This ensures the constraint is satisfied during optimization.
+        """
         if self.curvature > 0:
-            # Project to sphere
-            radius = 1.0 / torch.sqrt(torch.tensor(self.curvature))
-            return radius * self.points / self.points.norm(dim=1, keepdim=True)
+            # Spherical: self.points contains (x1, ..., xd)
+            # Compute x0 = sqrt(r^2 - x1^2 - ... - xd^2)
+            # Then return (x0, x1, ..., xd) normalized to sphere
+
+            free_coords = self.points  # shape: (n, d)
+            squared_norm = (free_coords * free_coords).sum(dim=1, keepdim=True)
+
+            # Type assertion for buffer
+            radius_squared: Tensor = self.radius_squared  # type: ignore
+
+            # Ensure we're inside the sphere by clamping
+            squared_norm = torch.clamp(squared_norm, max=radius_squared - 1e-7)
+
+            # Compute constrained coordinate
+            x0 = torch.sqrt(radius_squared - squared_norm)
+
+            # Full ambient coordinates
+            full_coords = torch.cat([x0, free_coords], dim=1)
+
+            return full_coords
 
         elif self.curvature == 0:
-            # No constraint for Euclidean
+            # Euclidean: no constraint
             return self.points
 
         else:  # curvature < 0
-            # Project to hyperboloid: x0^2 - ||x_space||^2 = r^2
-            radius = 1.0 / torch.sqrt(torch.tensor(-self.curvature))
-            spatial = self.points[:, 1:]
+            # Hyperbolic: self.points contains spatial coords (x1, ..., xd)
+            # Compute time x0 = sqrt(r^2 + x1^2 + ... + xd^2)
+            # Return (x0, x1, ..., xd) which satisfies x0^2 - ||spatial||^2 = r^2
 
-            # Ensure time coordinate satisfies constraint
-            time_corrected = torch.sqrt(
-                radius**2 + (spatial**2).sum(dim=1, keepdim=True)
-            )
-            # Make sure time is positive
-            time_corrected = torch.abs(time_corrected)
+            spatial = self.points  # shape: (n, d)
+            squared_spatial_norm = (spatial * spatial).sum(dim=1, keepdim=True)
 
-            return torch.cat([time_corrected, spatial], dim=1)
+            # Type assertion for buffer
+            radius_squared: Tensor = self.radius_squared  # type: ignore
+
+            # Compute time coordinate from constraint
+            time = torch.sqrt(radius_squared + squared_spatial_norm)
+
+            # Full ambient coordinates
+            full_coords = torch.cat([time, spatial], dim=1)
+
+            return full_coords
 
     def pairwise_distances(self, points: Tensor) -> Tensor:
         """
@@ -83,9 +128,11 @@ class ConstantCurvatureEmbedding(nn.Module):
         """
         if self.curvature > 0:
             # Spherical distance: d(x,y) = r * arccos(<x,y> / r^2)
-            radius = 1.0 / torch.sqrt(torch.tensor(self.curvature))
+            radius: Tensor = self.radius  # type: ignore
+            radius_squared: Tensor = self.radius_squared  # type: ignore
+
             # Compute dot products
-            dots = torch.mm(points, points.t()) / (radius**2)
+            dots = torch.mm(points, points.t()) / radius_squared
             # Clamp to avoid numerical issues with arccos
             dots = torch.clamp(dots, -1.0 + 1e-7, 1.0 - 1e-7)
             distances = radius * torch.acos(dots)
@@ -97,20 +144,25 @@ class ConstantCurvatureEmbedding(nn.Module):
 
         else:  # curvature < 0
             # Hyperbolic distance in hyperboloid model
-            # d(x,y) = r * arccosh(-<x,y>_L / r^2)
-            # where <x,y>_L = x0*y0 - x1*y1 - ... - xd*yd (Lorentzian inner product)
-            radius = 1.0 / torch.sqrt(torch.tensor(-self.curvature))
+            # Upper sheet hyperboloid: x0^2 - x1^2 - ... - xd^2 = r^2, x0 > 0
+            # Lorentzian inner product: <x,y>_L = x0*y0 - x1*y1 - ... - xd*yd
+            # Distance: d(x,y) = r * arccosh(<x,y>_L / r^2)
+            # Note: For points on hyperboloid, <x,y>_L / r^2 >= 1
+            radius: Tensor = self.radius  # type: ignore
+            radius_squared: Tensor = self.radius_squared  # type: ignore
 
-            # Lorentzian inner product
+            # Lorentzian inner product with signature (+, -, -, ...)
             time = points[:, 0:1]
             spatial = points[:, 1:]
 
             lorentz_prod = torch.mm(time, time.t()) - torch.mm(spatial, spatial.t())
-            lorentz_prod = -lorentz_prod / (radius**2)
+            lorentz_prod_normalized = lorentz_prod / radius_squared
 
             # Clamp to avoid numerical issues: arccosh needs input >= 1
-            lorentz_prod = torch.clamp(lorentz_prod, 1.0 + 1e-7, None)
-            distances = radius * torch.acosh(lorentz_prod)
+            lorentz_prod_normalized = torch.clamp(
+                lorentz_prod_normalized, 1.0 + 1e-7, None
+            )
+            distances = radius * torch.acosh(lorentz_prod_normalized)
 
         return distances
 
@@ -157,8 +209,29 @@ def fit_embedding(
     """
     n_points = distance_matrix.shape[0]
 
-    # Initialize model
-    model = ConstantCurvatureEmbedding(n_points, embed_dim, curvature)
+    # Compute statistics from the distance matrix to inform initialization
+    # Exclude diagonal (zero distances) when computing statistics
+    mask = ~torch.eye(n_points, dtype=torch.bool)
+    distances_no_diag = distance_matrix[mask]
+
+    mean_distance = distances_no_diag.mean().item()
+    std_distance = distances_no_diag.std().item()
+
+    # Use a scale that produces reasonable initial distances in embedding space
+    # We want initial random distances to be on the same order as target distances
+    init_scale = (
+        mean_distance
+        / (2 * torch.sqrt(torch.tensor(embed_dim, dtype=torch.float32))).item()
+    )
+
+    if verbose:
+        print(f"Distance statistics: mean={mean_distance:.4f}, std={std_distance:.4f}")
+        print(f"Initialization scale: {init_scale:.4f}")
+
+    # Initialize model with data-driven scale
+    model = ConstantCurvatureEmbedding(
+        n_points, embed_dim, curvature, init_scale=init_scale
+    )
 
     # Optimizer
     optimizer = optim.Adam(model.parameters(), lr=lr)
