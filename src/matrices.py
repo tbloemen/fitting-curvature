@@ -39,9 +39,7 @@ def calculate_distance_matrix(X: Tensor) -> Tensor:
     return distances
 
 
-def get_scale_and_n(
-    distance_matrix: Tensor, embed_dim: int, verbose=True
-) -> tuple[int, float]:
+def get_init_scale(distance_matrix: Tensor, embed_dim: int, verbose=True) -> float:
     n_points = distance_matrix.shape[0]
 
     # Compute statistics from the distance matrix to inform initialization
@@ -63,4 +61,4 @@ def get_scale_and_n(
         print(f"Distance statistics: mean={mean_distance:.4f}, std={std_distance:.4f}")
         print(f"Initialization scale: {init_scale:.4f}")
 
-    return n_points, init_scale
+    return init_scale

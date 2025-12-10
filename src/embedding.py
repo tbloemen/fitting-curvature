@@ -193,37 +193,11 @@ class ConstantCurvatureEmbedding(nn.Module):
         return self.project_to_manifold()
 
 
-def get_scale_and_n(
-    distance_matrix: Tensor, embed_dim: int, verbose=True
-) -> tuple[int, float]:
-    n_points = distance_matrix.shape[0]
-
-    # Compute statistics from the distance matrix to inform initialization
-    # Exclude diagonal (zero distances) when computing statistics
-    mask = ~torch.eye(n_points, dtype=torch.bool, device=distance_matrix.device)
-    distances_no_diag = distance_matrix[mask]
-
-    mean_distance = distances_no_diag.mean().item()
-    std_distance = distances_no_diag.std().item()
-
-    # Use a scale that produces reasonable initial distances in embedding space
-    # We want initial random distances to be on the same order as target distances
-    init_scale = (
-        mean_distance
-        / (2 * torch.sqrt(torch.tensor(embed_dim, dtype=torch.float32))).item()
-    )
-
-    if verbose:
-        print(f"Distance statistics: mean={mean_distance:.4f}, std={std_distance:.4f}")
-        print(f"Initialization scale: {init_scale:.4f}")
-
-    return n_points, init_scale
-
-
 def fit_embedding(
     distance_matrix: Tensor,
     embed_dim: int,
     curvature: float,
+    init_scale: float,
     n_iterations: int = 1000,
     lr: float = 0.01,
     verbose: bool = True,
@@ -267,25 +241,6 @@ def fit_embedding(
     distance_matrix = distance_matrix.to(device)
 
     n_points = distance_matrix.shape[0]
-
-    # Compute statistics from the distance matrix to inform initialization
-    # Exclude diagonal (zero distances) when computing statistics
-    mask = ~torch.eye(n_points, dtype=torch.bool, device=device)
-    distances_no_diag = distance_matrix[mask]
-
-    mean_distance = distances_no_diag.mean().item()
-    std_distance = distances_no_diag.std().item()
-
-    # Use a scale that produces reasonable initial distances in embedding space
-    # We want initial random distances to be on the same order as target distances
-    init_scale = (
-        mean_distance
-        / (2 * torch.sqrt(torch.tensor(embed_dim, dtype=torch.float32))).item()
-    )
-
-    if verbose:
-        print(f"Distance statistics: mean={mean_distance:.4f}, std={std_distance:.4f}")
-        print(f"Initialization scale: {init_scale:.4f}")
 
     # Initialize model with data-driven scale on the specified device
     model = ConstantCurvatureEmbedding(

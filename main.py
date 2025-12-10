@@ -2,13 +2,12 @@ import torch
 
 from src.embedding import fit_embedding
 from src.load_data import load_raw_data
-from src.matrices import calculate_distance_matrix
+from src.matrices import calculate_distance_matrix, get_init_scale
+from src.metrics import evaluate_embedding
 from src.visualisation import default_plot, project_to_2d
 
 
 def main():
-    print("Hello from fitting-curvature!")
-
     # Check device availability
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
@@ -27,6 +26,10 @@ def main():
     A = calculate_distance_matrix(X)
     print(f"Distance matrix shape: {A.shape}, device: {A.device}")
 
+    # Calculate statistics once for all experiments
+    print("\nCalculating distance statistics...")
+    init_scale = get_init_scale(A, embed_dim, verbose=True)
+
     for k in [-1, 0, 1]:
         print(f"\n{'=' * 60}")
         print(f"Training embedding with curvature k = {k}")
@@ -40,10 +43,19 @@ def main():
             n_iterations=n_iterations,
             lr=0.01,
             verbose=True,
+            init_scale=init_scale,
         )
 
         # Get the learned embeddings (move to CPU for visualization)
         embeddings = model.get_embeddings().detach().cpu().numpy()
+
+        # Calculate embedding quality metrics
+        X_cpu = X.detach().cpu().numpy()
+        trust_score, continuity_score = evaluate_embedding(
+            X_cpu, embeddings, n_neighbors=5
+        )
+        print(f"Trustworthiness: {trust_score:.4f}")
+        print(f"Continuity: {continuity_score:.4f}")
 
         # Visualize the first two dimensions
         x_proj, y_proj = project_to_2d(embeddings, i=1, j=2, k=k)
