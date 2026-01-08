@@ -71,18 +71,16 @@ class RiemannianSGD(Optimizer):
 
                 if curvature > 0:
                     # Spherical case
-                    # Project gradient to tangent space: proj^S_x(h) = h - ⟨h, x⟩x
+                    # Project gradient to tangent space and update via exponential map
                     radius_sq = 1.0 / abs(curvature)
                     v = self._project_sphere(p.data, h, radius_sq)
-                    # Update via exponential map
                     p.data = self._exp_map_sphere(p.data, -lr * v, radius_sq)
 
                 elif curvature < 0:
                     # Hyperbolic case (lines 7-9 in Algorithm 1)
-                    # For hyperboloid model with parameterization of spatial coords only
+                    # Project gradient to tangent space and update via exponential map
                     radius_sq = 1.0 / abs(curvature)
                     v = self._riemannian_grad_hyperbolic(p.data, h, radius_sq)
-                    # Update via exponential map
                     p.data = self._exp_map_hyperbolic(p.data, -lr * v, radius_sq)
 
                 else:  # curvature == 0
@@ -93,120 +91,82 @@ class RiemannianSGD(Optimizer):
         return loss
 
     def _project_sphere(
-        self, spatial: Tensor, grad_spatial: Tensor, radius_sq: float = 1.0
+        self, points: Tensor, grad_points: Tensor, radius_sq: float = 1.0
     ) -> Tensor:
         """
         Project gradient to tangent space of sphere.
 
-        Parameters are spatial coordinates (x1, ..., xd).
-        x0 is computed from constraint: x0^2 + ||spatial||^2 = r^2
+        Parameters are full ambient coordinates (x0, x1, ..., xd).
         """
-        # Reconstruct full point on sphere
-        spatial_norm_sq = (spatial**2).sum(dim=-1, keepdim=True)
-        spatial_norm_sq = torch.clamp(spatial_norm_sq, max=radius_sq - 1e-7)
-        x0 = torch.sqrt(radius_sq - spatial_norm_sq)
-        x_full = torch.cat([x0, spatial], dim=-1)
-
-        # Lift gradient to full space (gradient w.r.t. x0 is implicitly zero)
-        grad_x0 = torch.zeros_like(x0)
-        grad_full = torch.cat([grad_x0, grad_spatial], dim=-1)
-
         # Project to tangent space: proj_x(h) = h - ⟨h, x⟩x
-        inner_prod = (grad_full * x_full).sum(dim=-1, keepdim=True)
-        v_full = grad_full - inner_prod * x_full
+        inner_prod = (grad_points * points).sum(dim=-1, keepdim=True)
+        v = grad_points - inner_prod * points
 
-        # Return only spatial part
-        return v_full[..., 1:]
+        return v
 
     def _exp_map_sphere(
-        self, spatial: Tensor, v_spatial: Tensor, radius_sq: float = 1.0
+        self, points: Tensor, v_points: Tensor, radius_sq: float = 1.0
     ) -> Tensor:
         """
         Exponential map on sphere.
 
-        Parameters and updates are in spatial coordinates only.
+        Parameters and updates are in full ambient coordinates.
         """
-        radius = torch.sqrt(torch.tensor(radius_sq, device=spatial.device))
+        radius = torch.sqrt(torch.tensor(radius_sq, device=points.device))
 
-        # Reconstruct full point
-        spatial_norm_sq = (spatial**2).sum(dim=-1, keepdim=True)
-        spatial_norm_sq = torch.clamp(spatial_norm_sq, max=radius_sq - 1e-7)
-        x0 = torch.sqrt(radius_sq - spatial_norm_sq)
-        x_full = torch.cat([x0, spatial], dim=-1)
-
-        # Lift update vector (x0 component computed from tangency constraint)
-        # For tangent vector, we need: ⟨x, v⟩ = 0, so v_0 = -(spatial · v_spatial) / x0
-        v0 = -(spatial * v_spatial).sum(dim=-1, keepdim=True) / x0
-        v_full = torch.cat([v0, v_spatial], dim=-1)
-
-        # Compute norm
-        v_norm = torch.norm(v_full, dim=-1, keepdim=True)
+        # Compute norm of tangent vector
+        v_norm = torch.norm(v_points, dim=-1, keepdim=True)
         v_norm = torch.clamp(v_norm, min=1e-10)
 
         # Exponential map: exp_x(v) = cos(||v||/r) x + sin(||v||/r) (r * v/||v||)
-        x_new_full = (
-            torch.cos(v_norm / radius) * x_full
-            + torch.sin(v_norm / radius) * v_full / v_norm * radius
+        x_new = (
+            torch.cos(v_norm / radius) * points
+            + torch.sin(v_norm / radius) * v_points / v_norm * radius
         )
 
-        # Return spatial coordinates
-        return x_new_full[..., 1:]
+        # Normalize to maintain constraint exactly
+        x_new_norm = torch.norm(x_new, dim=-1, keepdim=True)
+        x_new = (
+            x_new
+            / x_new_norm
+            * torch.sqrt(torch.tensor(radius_sq, device=points.device))
+        )
+
+        return x_new
 
     def _riemannian_grad_hyperbolic(
-        self, spatial: Tensor, grad_spatial: Tensor, radius_sq: float = 1.0
+        self, points: Tensor, grad_points: Tensor, radius_sq: float = 1.0
     ) -> Tensor:
         """
         Compute Riemannian gradient for hyperbolic space (hyperboloid model).
 
-        Parameters are spatial coordinates (x1, ..., xd).
-        x0 is computed from constraint: x0^2 - ||spatial||^2 = r^2
+        Parameters are full ambient coordinates (x0, x1, ..., xd).
         """
-        # Reconstruct full hyperboloid point
-        spatial_norm_sq = (spatial**2).sum(dim=-1, keepdim=True)
-        x0 = torch.sqrt(radius_sq + spatial_norm_sq)
-        x_full = torch.cat([x0, spatial], dim=-1)
-
-        # Lift gradient to full space (gradient w.r.t. x0 is implicitly zero)
-        grad_x0 = torch.zeros_like(x0)
-        grad_full = torch.cat([grad_x0, grad_spatial], dim=-1)
-
         # Apply inverse metric tensor: g^{-1} = diag(-1, 1, ..., 1)
-        h = grad_full.clone()
+        h = grad_points.clone()
         h[..., 0:1] = -h[..., 0:1]
 
         # Project to tangent space: proj^H_x(h) = h + ⟨x, h⟩_L * x
         # Lorentzian inner product: ⟨x, h⟩_L = -x_0 * h_0 + x_1 * h_1 + ...
-        lorentz_product = -x_full[..., 0:1] * h[..., 0:1] + (
-            x_full[..., 1:] * h[..., 1:]
+        lorentz_product = -points[..., 0:1] * h[..., 0:1] + (
+            points[..., 1:] * h[..., 1:]
         ).sum(dim=-1, keepdim=True)
-        v_full = h + lorentz_product * x_full
+        v = h + lorentz_product * points
 
-        # Return only spatial part
-        return v_full[..., 1:]
+        return v
 
     def _exp_map_hyperbolic(
-        self, spatial: Tensor, v_spatial: Tensor, radius_sq: float = 1.0
+        self, points: Tensor, v_points: Tensor, radius_sq: float = 1.0
     ) -> Tensor:
         """
         Exponential map on hyperboloid.
 
-        Parameters and updates are in spatial coordinates only.
+        Parameters and updates are in full ambient coordinates.
         """
-        radius = torch.sqrt(torch.tensor(radius_sq, device=spatial.device))
-
-        # Reconstruct full point
-        spatial_norm_sq = (spatial**2).sum(dim=-1, keepdim=True)
-        x0 = torch.sqrt(radius_sq + spatial_norm_sq)
-        x_full = torch.cat([x0, spatial], dim=-1)
-
-        # Lift update vector (x0 component computed from tangency constraint)
-        # For tangent vector, we need: ⟨x, v⟩_L = 0, so -x0*v0 + spatial·v_spatial = 0
-        # Therefore: v_0 = (spatial · v_spatial) / x0
-        v0 = (spatial * v_spatial).sum(dim=-1, keepdim=True) / x0
-        v_full = torch.cat([v0, v_spatial], dim=-1)
+        radius = torch.sqrt(torch.tensor(radius_sq, device=points.device))
 
         # Compute Lorentzian norm: ||v||_L^2 = ⟨v, v⟩_L = -v0^2 + ||v_spatial||^2
-        v_lorentz_sq = -(v_full[..., 0:1] ** 2) + (v_full[..., 1:] ** 2).sum(
+        v_lorentz_sq = -(v_points[..., 0:1] ** 2) + (v_points[..., 1:] ** 2).sum(
             dim=-1, keepdim=True
         )
 
@@ -215,19 +175,16 @@ class RiemannianSGD(Optimizer):
         v_norm = torch.sqrt(v_lorentz_sq)
 
         # Exponential map: exp_x(v) = cosh(||v||_L/r) x + sinh(||v||_L/r) (r * v/||v||_L)
-        x_new_full = (
-            torch.cosh(v_norm / radius) * x_full
-            + torch.sinh(v_norm / radius) * v_full / v_norm * radius
+        x_new = (
+            torch.cosh(v_norm / radius) * points
+            + torch.sinh(v_norm / radius) * v_points / v_norm * radius
         )
 
-        # The exponential map should produce a point on the hyperboloid, but due to
-        # numerical errors, we explicitly project back to ensure the constraint is satisfied.
-        #
-        # For the hyperboloid -x0^2 + ||spatial||^2 = -r^2, we have x0 = sqrt(r^2 + ||spatial||^2).
-        # We normalize the result to satisfy this exactly.
+        # Normalize to maintain hyperboloid constraint exactly
+        # For hyperboloid: -x0^2 + ||spatial||^2 = -r^2
+        spatial = x_new[..., 1:]
+        spatial_norm_sq = (spatial**2).sum(dim=-1, keepdim=True)
+        x0 = torch.sqrt(radius_sq + spatial_norm_sq)
+        x_new = torch.cat([x0, spatial], dim=-1)
 
-        # Extract new spatial coordinates
-        new_spatial = x_new_full[..., 1:]
-
-        # Return only spatial coordinates (x0 will be recomputed in project_to_manifold)
-        return new_spatial
+        return x_new
