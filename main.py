@@ -58,8 +58,14 @@ def main():
 
     # Calculate distance matrix in original space (stays on device)
     print("\nCalculating distance matrix...")
-    A = calculate_distance_matrix(X)
+    sparsity_threshold = hyperparam_config.get("sparsity_threshold", 1.0)
+    chunk_size = hyperparam_config.get("chunk_size", 1000)
+    A = calculate_distance_matrix(
+        X, sparsity_threshold=sparsity_threshold, chunk_size=chunk_size
+    )
     print(f"Distance matrix shape: {A.shape}, device: {A.device}")
+    if sparsity_threshold < 1.0:
+        print(f"Using sparse matrix with {sparsity_threshold * 100:.1f}% sparsity")
 
     # Calculate statistics once for all experiments
     print("\nCalculating distance statistics...")

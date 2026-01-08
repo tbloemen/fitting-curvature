@@ -8,8 +8,9 @@ Following:
 
 import pytest
 import torch
+
 from src.embedding import compute_loss, fit_embedding
-from src.matrices import calculate_distance_matrix, get_init_scale
+from src.matrices import calculate_distance_matrix
 
 
 @pytest.fixture
@@ -101,7 +102,7 @@ def test_rsgd_convergence_quality(synthetic_dataset):
     assert euc_loss < 10000, f"Euclidean loss too high: {euc_loss}"
     assert sph_loss < 10000, f"Spherical loss too high: {sph_loss}"
 
-    print(f"\nRSGD performance across geometries:")
+    print("\nRSGD performance across geometries:")
     print(f"  Hyperbolic loss: {hyp_loss:.2f}")
     print(f"  Euclidean loss: {euc_loss:.2f}")
     print(f"  Spherical loss: {sph_loss:.2f}")
@@ -134,9 +135,9 @@ def test_rsgd_hyperboloid_constraint(synthetic_dataset):
     expected = torch.ones_like(constraint) * (-1.0)
 
     # Allow small numerical error
-    assert torch.allclose(constraint, expected, atol=1e-5), (
-        "Hyperboloid constraint violated"
-    )
+    assert torch.allclose(
+        constraint, expected, atol=1e-5
+    ), "Hyperboloid constraint violated"
 
 
 def test_rsgd_spherical_constraint():
@@ -193,9 +194,9 @@ def test_gu2019_loss_convergence(synthetic_dataset):
         distances = model().cpu()
         final_loss = compute_loss(distances, distance_matrix.cpu(), "gu2019").item()
 
-    assert torch.isfinite(torch.tensor(final_loss)), (
-        "Gu et al. loss produced infinite loss"
-    )
+    assert torch.isfinite(
+        torch.tensor(final_loss)
+    ), "Gu et al. loss produced infinite loss"
     assert final_loss < 10000, f"Gu et al. loss too high: {final_loss}"
 
 
@@ -271,7 +272,7 @@ def test_loss_type_comparison(synthetic_dataset):
 
     # Gu et al. loss should be lower on its own metric
     # (though MSE loss may be better at absolute error)
-    print(f"\nLoss comparison:")
+    print("\nLoss comparison:")
     print(f"  Gu et al. model relative distortion: {gu_loss:.4f}")
     print(f"  MSE model relative distortion: {mse_loss:.4f}")
 
@@ -367,7 +368,7 @@ def test_compute_loss_function():
     gu_loss_2 = compute_loss(embedded_with_diagonal, target_distances, "gu2019")
     assert torch.allclose(gu_loss_1, gu_loss_2), "Gu et al. loss should ignore diagonal"
 
-    print(f"\ncompute_loss tests:")
+    print("\ncompute_loss tests:")
     print(f"  Gu et al. loss: {gu_loss.item():.4f}")
     print(f"  MSE loss: {mse_loss.item():.4f}")
 
