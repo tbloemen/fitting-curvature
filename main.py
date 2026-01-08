@@ -112,10 +112,11 @@ def main():
         print(f"Continuity: {continuity_score:.4f}")
 
         # Visualize the first two dimensions
-        x_proj, y_proj = project_to_2d(embeddings, i=1, j=2, k=k)
-        fig = default_plot(x_proj, y_proj)
+        x_proj, y_proj = project_to_2d(embeddings, k=k)
+        y_labels = y.detach().cpu().numpy() if hasattr(y, "detach") else y
+        fig = default_plot(x_proj, y_proj, labels=y_labels)
         fig.suptitle(f"Embedding with curvature k = {k}")
-        fig.savefig(f"plots/plot_{k}.png", dpi=150)
+        fig.savefig(f"plots/plot_{k}.png", dpi=150, bbox_inches="tight")
         print(f"Saved visualization to plots/plot_{k}.png")
 
 

@@ -4,7 +4,7 @@ from matplotlib.patches import Circle
 
 
 def project_to_2d(
-    X: np.ndarray, i: int, j: int, k: float, pole_axis: int | None = None
+    X: np.ndarray, k: float, i: int = 0, j: int = 1, pole_axis: int | None = None
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     Project F-dimensional constant-curvature points onto 2D using two coordinates.
@@ -27,19 +27,18 @@ def project_to_2d(
         2D projected coordinates.
     """
 
-    if pole_axis is None:
-        pole_axis = X.shape[1] - 1
-
     if k > 0:
         # Spherical stereographic
         r = 1.0 / np.sqrt(k)  # sphere radius
+        if pole_axis is None:
+            pole_axis = 0
         z = X[:, pole_axis]  # coord used as pole
         denom = r - z
         # Avoid numerical blowups:
         denom = np.where(np.abs(denom) < 1e-12, 1e-12, denom)
         scale = r / denom
 
-        return scale * X[:, i], scale * X[:, j]
+        return scale * X[:, i + 1], scale * X[:, j + 1]
 
     elif k == 0:
         # Euclidean projection
@@ -54,12 +53,50 @@ def project_to_2d(
         denom = x0 + r
         denom = np.where(np.abs(denom) < 1e-12, 1e-12, denom)
 
-        return X[:, i] / denom, X[:, j] / denom
+        return X[:, i + 1] / denom, X[:, j + 1] / denom
 
 
-def default_plot(x, y):
-    fig, ax = plt.subplots()
-    ax.scatter(x, y, marker=".", s=1)
+def default_plot(x, y, labels=None):
+    """
+    Create a scatter plot with optional label-based coloring.
+
+    Parameters
+    ----------
+    x, y : array
+        2D coordinates to plot
+    labels : array or None
+        Optional labels for coloring points. If provided, points are colored by label.
+        For MNIST, labels should be 0-9 for the 10 digit classes.
+
+    Returns
+    -------
+    fig : matplotlib figure
+        The created figure
+    """
+    fig, ax = plt.subplots(figsize=(8, 8))
+
+    if labels is not None:
+        # Define a colormap for 10 MNIST digit classes
+        cmap = plt.get_cmap("tab10")
+        colors = cmap(np.arange(10))
+
+        # Plot each label separately to get proper legend
+        unique_labels = np.unique(labels)
+        for label in sorted(unique_labels):
+            mask = labels == label
+            ax.scatter(
+                x[mask],
+                y[mask],
+                c=[colors[int(label)]],
+                label=f"Digit {int(label)}",
+                marker=".",
+                s=1,
+                alpha=0.7,
+            )
+        ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left", fontsize=8)
+    else:
+        ax.scatter(x, y, marker=".", s=1)
+
     ax.add_patch(Circle((0, 0), radius=1, edgecolor="b", facecolor="None"))
     ax.axis("square")
     return fig
