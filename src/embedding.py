@@ -119,7 +119,7 @@ class ConstantCurvatureEmbedding(nn.Module):
         else:  # curvature < 0
             # Hyperbolic: self.points contains spatial coords (x1, ..., xd)
             # Compute time x0 = sqrt(r^2 + x1^2 + ... + xd^2)
-            # Return (x0, x1, ..., xd) which satisfies x0^2 - ||spatial||^2 = r^2
+            # Return (x0, x1, ..., xd) which satisfies ⟨x, x⟩L = -x0^2 + ||spatial||^2 = -r^2
 
             spatial = self.points  # shape: (n, d)
             squared_spatial_norm = (spatial * spatial).sum(dim=1, keepdim=True)
@@ -160,26 +160,29 @@ class ConstantCurvatureEmbedding(nn.Module):
             distances = torch.norm(diff, dim=2)
 
         else:  # curvature < 0
-            # Hyperbolic distance in hyperboloid model
-            # Upper sheet hyperboloid: x0^2 - x1^2 - ... - xd^2 = r^2, x0 > 0
-            # Lorentzian inner product: <x,y>_L = x0*y0 - x1*y1 - ... - xd*yd
-            # Distance: d(x,y) = r * arccosh(<x,y>_L / r^2)
-            # Note: For points on hyperboloid, <x,y>_L / r^2 >= 1
+            # Hyperbolic distance in hyperboloid model (Nickel & Kiela 2017)
+            # Upper sheet hyperboloid: ⟨x,x⟩L = -x0^2 + x1^2 + ... + xd^2 = -r^2, x0 > 0
+            # Lorentzian inner product: ⟨x,y⟩L = -x0*y0 + x1*y1 + ... + xd*yd
+            # Distance: d(x,y) = r * arcosh(-⟨x,y⟩L / r^2)
+            # Note: For points on hyperboloid, -⟨x,y⟩L / r^2 >= 1
             radius: Tensor = self.radius  # type: ignore
             radius_squared: Tensor = self.radius_squared  # type: ignore
 
-            # Lorentzian inner product with signature (+, -, -, ...)
+            # Lorentzian inner product with signature (-, +, +, ...)
+            # Following Nickel & Kiela: ⟨x, y⟩L = -x0*y0 + x1*y1 + ... + xd*yd
             time = points[:, 0:1]
             spatial = points[:, 1:]
 
-            lorentz_prod = torch.mm(time, time.t()) - torch.mm(spatial, spatial.t())
+            lorentz_prod = -torch.mm(time, time.t()) + torch.mm(spatial, spatial.t())
             lorentz_prod_normalized = lorentz_prod / radius_squared
 
-            # Clamp to avoid numerical issues: arccosh needs input >= 1
-            lorentz_prod_normalized = torch.clamp(
-                lorentz_prod_normalized, 1.0 + 1e-7, None
-            )
-            distances = radius * torch.acosh(lorentz_prod_normalized)
+            # Following Nickel & Kiela: d(x,y) = arcosh(-⟨x,y⟩L / r^2)
+            # Note: ⟨x,y⟩L is negative for points on hyperboloid, so -⟨x,y⟩L >= 1
+            # Add small epsilon to avoid infinite gradient at x=1 (arcosh'(1) = ∞)
+            # Use clamp to ensure all values are >= 1 + eps despite floating point errors
+            eps = 1e-7
+            input_to_acosh = torch.clamp(-lorentz_prod_normalized, min=1.0 + eps)
+            distances = radius * torch.acosh(input_to_acosh)
 
         return distances
 
