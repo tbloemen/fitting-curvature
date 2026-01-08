@@ -32,7 +32,7 @@ def compute_loss(
         Scalar loss value
     """
     if loss_type == "gu2019":
-        # Gu et al. (2019) relative distortion loss (Eq 2)
+        # Gu et al. (2019) relative distortion loss
         # L = sum((d_P(xi,xj)/d_G(Xi,Xj) - 1)^2) for i<j
 
         if distance_matrix.is_sparse and model is not None:
@@ -420,9 +420,9 @@ def fit_embedding(
     """
     # Set device (defaults to CUDA if available, else CPU)
     if device is None:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # type: ignore
     else:
-        device = torch.device(device)
+        device = torch.device(device)  # type: ignore
 
     if verbose:
         print(f"Using device: {device}")

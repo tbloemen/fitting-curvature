@@ -259,49 +259,6 @@ def _compute_distance_matrix_sparse_chunked(
     return sparse_distances
 
 
-def _sparsify_distance_matrix(distances: Tensor, sparsity_threshold: float) -> Tensor:
-    """
-    Sparsify a distance matrix by keeping only the smallest distances.
-
-    Parameters
-    ----------
-    distances : Tensor, shape (N, N)
-        Dense distance matrix
-    sparsity_threshold : float
-        Percentage of smallest distances to keep (0.0 to 1.0)
-
-    Returns
-    -------
-    Tensor
-        Sparse COO tensor with the same shape
-    """
-    n = distances.shape[0]
-
-    # Calculate the number of elements to keep per row
-    # Keep at least 1 element per row (self-distance)
-    elements_per_row = max(1, int(n * sparsity_threshold))
-
-    # Get indices of smallest elements per row
-    # We use topk with largest=False to get the smallest distances
-    k = min(elements_per_row, n)  # Ensure we don't request more than available
-    values, indices = torch.topk(distances, k, dim=1, largest=False)
-
-    # Create sparse tensor using COO format
-    row_indices = (
-        torch.arange(n, device=distances.device).unsqueeze(1).expand(-1, k).reshape(-1)
-    )
-    col_indices = indices.reshape(-1)
-    sparse_values = values.reshape(-1)
-
-    # Create sparse tensor
-    indices_sparse = torch.stack([row_indices, col_indices])
-    sparse_distances = torch.sparse_coo_tensor(
-        indices_sparse, sparse_values, distances.shape, device=distances.device
-    )
-
-    return sparse_distances
-
-
 def get_init_scale(distance_matrix: Tensor, embed_dim: int, verbose=True) -> float:
     n_points = distance_matrix.shape[0]
 

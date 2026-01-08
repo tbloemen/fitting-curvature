@@ -73,26 +73,24 @@ class RiemannianSGD(Optimizer):
                     # Spherical case
                     # Project gradient to tangent space and update via exponential map
                     radius_sq = 1.0 / abs(curvature)
-                    v = self._project_sphere(p.data, h, radius_sq)
+                    v = self._project_sphere(p.data, h)
                     p.data = self._exp_map_sphere(p.data, -lr * v, radius_sq)
 
                 elif curvature < 0:
-                    # Hyperbolic case (lines 7-9 in Algorithm 1)
+                    # Hyperbolic case
                     # Project gradient to tangent space and update via exponential map
                     radius_sq = 1.0 / abs(curvature)
-                    v = self._riemannian_grad_hyperbolic(p.data, h, radius_sq)
+                    v = self._riemannian_grad_hyperbolic(p.data, h)
                     p.data = self._exp_map_hyperbolic(p.data, -lr * v, radius_sq)
 
                 else:  # curvature == 0
-                    # Euclidean case (line 10 in Algorithm 1)
+                    # Euclidean case
                     # Standard gradient descent
                     p.data = p.data - lr * h
 
         return loss
 
-    def _project_sphere(
-        self, points: Tensor, grad_points: Tensor, radius_sq: float = 1.0
-    ) -> Tensor:
+    def _project_sphere(self, points: Tensor, grad_points: Tensor) -> Tensor:
         """
         Project gradient to tangent space of sphere.
 
@@ -135,7 +133,7 @@ class RiemannianSGD(Optimizer):
         return x_new
 
     def _riemannian_grad_hyperbolic(
-        self, points: Tensor, grad_points: Tensor, radius_sq: float = 1.0
+        self, points: Tensor, grad_points: Tensor
     ) -> Tensor:
         """
         Compute Riemannian gradient for hyperbolic space (hyperboloid model).

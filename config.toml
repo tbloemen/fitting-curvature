@@ -13,7 +13,7 @@ embed_dim = 2
 
 # Number of optimization iterations
 # Reduced from 5000 for faster training on limited GPU memory
-n_iterations = 1000
+n_iterations = 500
 
 # Loss function: "gu2019" for relative distortion or "mse" for mean squared error
 loss_type = "gu2019"
@@ -38,7 +38,7 @@ init_scale = "auto"
 # Example: 0.005 keeps the 0.5% smallest distances (nearest neighbors)
 # 1.0 = no sparsification (full dense matrix, not recommended for 70k+ samples)
 # RTX 3050 (3.68 GB) with 70k samples: use 0.005 for memory stability
-sparsity_threshold = 0.005
+sparsity_threshold = 0.01
 
 # Chunk size for distance matrix computation
 # Number of data points to process at a time (reduces peak memory usage)

@@ -1,8 +1,10 @@
 """Performance tests for constant curvature embeddings."""
 
 import time
-import torch
+
 import pytest
+import torch
+
 from src.embedding import ConstantCurvatureEmbedding
 
 
@@ -15,7 +17,7 @@ def perf_model():
     return ConstantCurvatureEmbedding(n_points, embed_dim, curvature, init_scale=0.1)
 
 
-def test_forward_pass_performance(perf_model, benchmark=None):
+def test_forward_pass_performance(perf_model):
     """Test forward pass performance."""
     # Warm up
     for _ in range(10):
@@ -25,19 +27,19 @@ def test_forward_pass_performance(perf_model, benchmark=None):
     n_iterations = 100
     start = time.time()
     for _ in range(n_iterations):
-        distances = perf_model()
+        _ = perf_model()
     elapsed = time.time() - start
 
     elapsed_ms = elapsed * 1000  # Convert to ms
     per_iteration = elapsed_ms / n_iterations
 
     # Performance assertions
-    assert per_iteration < 10.0, (
-        f"Forward pass too slow: {per_iteration:.4f}ms per iteration"
-    )
+    assert (
+        per_iteration < 10.0
+    ), f"Forward pass too slow: {per_iteration:.4f}ms per iteration"
 
     # Log performance metrics
-    print(f"\nForward pass performance:")
+    print("\nForward pass performance:")
     print(f"  Total time for {n_iterations} iterations: {elapsed_ms:.2f} ms")
     print(f"  Time per iteration: {per_iteration:.4f} ms")
 
@@ -81,15 +83,15 @@ def test_gpu_performance_faster_than_cpu():
 
     speedup = cpu_time / gpu_time
 
-    print(f"\nGPU vs CPU performance:")
+    print("\nGPU vs CPU performance:")
     print(f"  CPU time: {cpu_time:.4f}s")
     print(f"  GPU time: {gpu_time:.4f}s")
     print(f"  Speedup: {speedup:.2f}x")
 
     # GPU should be at least a bit faster (allowing for small models where overhead dominates)
-    assert gpu_time < cpu_time, (
-        f"GPU ({gpu_time:.4f}s) should be faster than CPU ({cpu_time:.4f}s)"
-    )
+    assert (
+        gpu_time < cpu_time
+    ), f"GPU ({gpu_time:.4f}s) should be faster than CPU ({cpu_time:.4f}s)"
 
 
 @pytest.mark.parametrize(
@@ -114,9 +116,9 @@ def test_performance_scales_reasonably(n_points, embed_dim):
     elapsed = time.time() - start
 
     # Should complete in reasonable time (< 1 second for these sizes)
-    assert elapsed < 1.0, (
-        f"Forward pass too slow for {n_points} points, {embed_dim}D: {elapsed:.4f}s"
-    )
+    assert (
+        elapsed < 1.0
+    ), f"Forward pass too slow for {n_points} points, {embed_dim}D: {elapsed:.4f}s"
 
     print(f"\n{n_points} points, {embed_dim}D: {elapsed * 1000:.2f}ms")
 
@@ -145,6 +147,6 @@ def test_no_memory_leak():
     mem_growth = final_mem - initial_mem
 
     # Allow some growth but not excessive
-    assert mem_growth < 10 * 1024 * 1024, (
-        f"Memory leaked: {mem_growth / 1024 / 1024:.2f}MB"
-    )
+    assert (
+        mem_growth < 10 * 1024 * 1024
+    ), f"Memory leaked: {mem_growth / 1024 / 1024:.2f}MB"
