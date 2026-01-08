@@ -6,6 +6,43 @@ from tqdm import tqdm
 from src.riemannian_optimizer import RiemannianSGD
 
 
+def compute_loss(
+    embedded_distances: Tensor,
+    distance_matrix: Tensor,
+    loss_type: str = "gu2019",
+) -> Tensor:
+    """
+    Compute loss function for embedding optimization.
+
+    Parameters
+    ----------
+    embedded_distances : Tensor, shape (N, N)
+        Pairwise distances in the embedded space
+    distance_matrix : Tensor, shape (N, N)
+        Target pairwise distances to preserve
+    loss_type : str
+        Type of loss function: 'gu2019' for relative distortion or 'mse' for mean squared error
+
+    Returns
+    -------
+    Tensor
+        Scalar loss value
+    """
+    if loss_type == "gu2019":
+        # Gu et al. (2019) relative distortion loss (Eq 2)
+        # L = sum((d_P(xi,xj)/d_G(Xi,Xj) - 1)^2) for i<j
+        n_points = distance_matrix.shape[0]
+        mask = torch.triu(torch.ones(n_points, n_points), diagonal=1).bool()
+        loss = torch.sum((embedded_distances[mask] / distance_matrix[mask] - 1) ** 2)
+    elif loss_type == "mse":
+        # Mean squared error (stress function)
+        loss = torch.sum((embedded_distances - distance_matrix) ** 2)
+    else:
+        raise ValueError(f"Unknown loss_type: {loss_type}. Use 'gu2019' or 'mse'")
+
+    return loss
+
+
 class ConstantCurvatureEmbedding(nn.Module):
     """
     Learn embeddings in constant curvature spaces using distance preservation.
@@ -168,6 +205,7 @@ def fit_embedding(
     lr: float = 0.01,
     verbose: bool = True,
     device: torch.device | str | None = None,
+    loss_type: str = "gu2019",
 ) -> ConstantCurvatureEmbedding:
     """
     Fit a constant curvature embedding to preserve given distances.
@@ -188,6 +226,8 @@ def fit_embedding(
         Print progress
     device : torch.device, str, or None
         Device to use for computation (defaults to CUDA if available, else CPU)
+    loss_type : str
+        Type of loss function: 'gu2019' for relative distortion (default) or 'mse' for mean squared error
 
     Returns
     -------
@@ -197,6 +237,11 @@ def fit_embedding(
     Notes
     -----
     Always uses Riemannian SGD optimizer following Gu et al. (2019).
+
+    Loss functions:
+    - 'gu2019': Relative distortion loss from Gu et al. (2019) Eq 2:
+                L = sum((d_P(xi,xj)/d_G(Xi,Xj) - 1)^2) for i<j
+    - 'mse': Mean squared error: L = sum((d_P(xi,xj) - d_G(Xi,Xj))^2)
     """
     # Set device (defaults to CUDA if available, else CPU)
     if device is None:
@@ -231,11 +276,9 @@ def fit_embedding(
     for _ in pbar:
         optimizer.zero_grad()
 
-        # Get embedded distances
+        # Get embedded distances and compute loss
         embedded_distances = model()
-
-        # Loss: preserve pairwise distances (stress function)
-        loss = torch.sum((embedded_distances - distance_matrix) ** 2)
+        loss = compute_loss(embedded_distances, distance_matrix, loss_type)
 
         loss.backward()
         optimizer.step()

@@ -44,6 +44,7 @@ def main():
             lr=0.01,
             verbose=True,
             init_scale=init_scale,
+            loss_type=loss_type,
         )
 
         # Get the learned embeddings (move to CPU for visualization)
