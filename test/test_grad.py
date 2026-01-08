@@ -16,31 +16,29 @@ def hyperbolic_model():
 
 def test_hyperbolic_model_initialization(hyperbolic_model):
     """Test that hyperbolic model initializes correctly."""
-    assert hyperbolic_model.points.shape == (10, 2)
+    assert hyperbolic_model.points.shape == (10, 3)
     assert hyperbolic_model.points.requires_grad is True
     assert hyperbolic_model.curvature == -1.0
     assert hyperbolic_model.embed_dim == 2
 
 
 def test_project_to_manifold_shape(hyperbolic_model):
-    """Test that projection to manifold produces correct shape."""
-    points = hyperbolic_model.project_to_manifold()
+    """Test that get_embeddings produces correct shape."""
+    points = hyperbolic_model.get_embeddings()
     # Hyperbolic uses hyperboloid model in R^(d+1)
     assert points.shape == (10, 3)
 
 
 def test_pairwise_distances_shape(hyperbolic_model):
     """Test that pairwise distances have correct shape."""
-    points = hyperbolic_model.project_to_manifold()
-    distances = hyperbolic_model.pairwise_distances(points)
+    distances = hyperbolic_model()
     assert distances.shape == (10, 10)
 
 
 def test_gradient_flow_hyperbolic(hyperbolic_model):
     """Test that gradients flow correctly through hyperbolic embedding."""
     # Forward pass
-    points = hyperbolic_model.project_to_manifold()
-    distances = hyperbolic_model.pairwise_distances(points)
+    distances = hyperbolic_model()
 
     # Compute loss
     loss = distances.sum()
@@ -59,15 +57,13 @@ def test_gradient_flow_hyperbolic(hyperbolic_model):
 
 def test_distances_non_negative(hyperbolic_model):
     """Test that all distances are non-negative."""
-    points = hyperbolic_model.project_to_manifold()
-    distances = hyperbolic_model.pairwise_distances(points)
+    distances = hyperbolic_model()
     assert (distances >= 0).all(), "All distances should be non-negative"
 
 
 def test_distances_symmetric(hyperbolic_model):
     """Test that distance matrix is symmetric."""
-    points = hyperbolic_model.project_to_manifold()
-    distances = hyperbolic_model.pairwise_distances(points)
+    distances = hyperbolic_model()
     assert torch.allclose(distances, distances.t(), atol=1e-5), (
         "Distance matrix should be symmetric"
     )
