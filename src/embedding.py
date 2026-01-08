@@ -1,8 +1,9 @@
 import torch
 import torch.nn as nn
-import torch.optim as optim
 from torch import Tensor
 from tqdm import tqdm
+
+from src.riemannian_optimizer import RiemannianSGD
 
 
 class ConstantCurvatureEmbedding(nn.Module):
@@ -50,19 +51,22 @@ class ConstantCurvatureEmbedding(nn.Module):
             )
 
         # Initialize embeddings based on curvature
-        # For constrained manifolds (sphere/hyperboloid), we only parameterize the free coordinates.
-        # The constrained coordinate is computed from the manifold equation.
-        # This ensures gradients respect the geometry.
+        # For RSGD, we work with full ambient coordinates.
+        # The optimizer's exponential map will maintain the manifold constraints.
 
         if curvature > 0:
             # Spherical: points on sphere in R^(d+1)
-            # Parameterize only d coordinates (x1, ..., xd)
-            # Compute x0 from constraint: x0^2 + x1^2 + ... + xd^2 = r^2
+            # Initialize with small random points and project to sphere
             self.ambient_dim = embed_dim + 1
-            self.param_dim = embed_dim
-            self.points = nn.Parameter(
-                torch.randn(n_points, self.param_dim, device=self.device) * init_scale
+            self.param_dim = embed_dim  # Spatial coordinates for RSGD
+
+            # Initialize spatial coordinates
+            spatial_init = (
+                torch.randn(n_points, embed_dim, device=self.device) * init_scale
             )
+
+            # RSGD will work with spatial coordinates only
+            self.points = nn.Parameter(spatial_init)
 
         elif curvature == 0:
             # Euclidean: points in R^d (no constraint)
@@ -74,13 +78,17 @@ class ConstantCurvatureEmbedding(nn.Module):
 
         else:  # curvature < 0
             # Hyperbolic: hyperboloid model in R^(d+1)
-            # Parameterize only spatial coordinates (x1, ..., xd)
-            # Compute time x0 from constraint: x0^2 - x1^2 - ... - xd^2 = r^2
+            # Initialize spatial coordinates, RSGD will maintain hyperboloid constraint
             self.ambient_dim = embed_dim + 1
-            self.param_dim = embed_dim
-            self.points = nn.Parameter(
-                torch.randn(n_points, self.param_dim, device=self.device) * init_scale
+            self.param_dim = embed_dim  # Spatial coordinates for RSGD
+
+            # Initialize spatial coordinates
+            spatial_init = (
+                torch.randn(n_points, embed_dim, device=self.device) * init_scale
             )
+
+            # RSGD will work with spatial coordinates only
+            self.points = nn.Parameter(spatial_init)
 
     def project_to_manifold(self) -> Tensor:
         """
@@ -220,7 +228,7 @@ def fit_embedding(
     n_iterations : int
         Number of optimization iterations
     lr : float
-        Learning rate
+        Learning rate (for RSGD, typically use smaller values than Adam)
     verbose : bool
         Print progress
     device : torch.device, str, or None
@@ -230,6 +238,10 @@ def fit_embedding(
     -------
     ConstantCurvatureEmbedding
         Fitted embedding model
+
+    Notes
+    -----
+    Always uses Riemannian SGD optimizer following Gu et al. (2019).
     """
     # Set device (defaults to CUDA if available, else CPU)
     if device is None:
@@ -250,8 +262,14 @@ def fit_embedding(
         n_points, embed_dim, curvature, init_scale=init_scale, device=device
     )
 
-    # Optimizer
-    optimizer = optim.Adam(model.parameters(), lr=lr)
+    optimizer = RiemannianSGD(model.parameters(), lr=lr, curvature=curvature)
+    if verbose:
+        manifold_type = "Euclidean"
+        if curvature > 0:
+            manifold_type = "spherical"
+        elif curvature < 0:
+            manifold_type = "hyperbolic"
+        print(f"Using Riemannian SGD optimizer for {manifold_type} space")
 
     # Training loop
     pbar = tqdm(range(n_iterations), disable=not verbose, desc="Training")
