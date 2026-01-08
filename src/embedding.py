@@ -7,9 +7,10 @@ from src.riemannian_optimizer import RiemannianSGD
 
 
 def compute_loss(
-    embedded_distances: Tensor,
+    embedded_distances: Tensor | None,
     distance_matrix: Tensor,
     loss_type: str = "gu2019",
+    model=None,
 ) -> Tensor:
     """
     Compute loss function for embedding optimization.
@@ -17,11 +18,13 @@ def compute_loss(
     Parameters
     ----------
     embedded_distances : Tensor, shape (N, N)
-        Pairwise distances in the embedded space
+        Pairwise distances in the embedded space (only used if distance_matrix is dense)
     distance_matrix : Tensor, shape (N, N)
-        Target pairwise distances to preserve
+        Target pairwise distances to preserve (can be dense or sparse)
     loss_type : str
         Type of loss function: 'gu2019' for relative distortion or 'mse' for mean squared error
+    model : ConstantCurvatureEmbedding, optional
+        Model for computing embedded distances on sparse indices only (for large sparse matrices)
 
     Returns
     -------
@@ -31,11 +34,69 @@ def compute_loss(
     if loss_type == "gu2019":
         # Gu et al. (2019) relative distortion loss (Eq 2)
         # L = sum((d_P(xi,xj)/d_G(Xi,Xj) - 1)^2) for i<j
-        n_points = distance_matrix.shape[0]
-        mask = torch.triu(torch.ones(n_points, n_points), diagonal=1).bool()
-        loss = torch.sum((embedded_distances[mask] / distance_matrix[mask] - 1) ** 2)
+
+        if distance_matrix.is_sparse and model is not None:
+            # For sparse matrices, only compute loss on non-zero entries
+            # Coalesce on CPU to avoid GPU memory issues
+            sparse_cpu = distance_matrix.cpu().coalesce()
+            indices_cpu = sparse_cpu.indices()
+            target_values_cpu = sparse_cpu.values()
+
+            # Move indices to device for distance computation
+            indices_device = indices_cpu.to(distance_matrix.device)
+
+            # Compute embedded distances only for the sparse indices on the model's device
+            embedded_dists_device = model._pairwise_distances_for_indices(
+                indices_device
+            )
+
+            # Move target values to device for loss computation
+            target_values_device = target_values_cpu.to(distance_matrix.device)
+
+            # Compute relative distortion loss with numerical stability
+            # Using a more stable formulation: L = sum((d_embedded - d_target)^2 / (d_target^2))
+            eps = 1e-8
+
+            # Ensure positive distances
+            embedded_dists_device = torch.clamp(embedded_dists_device, min=eps)
+            target_values_device_safe = torch.clamp(target_values_device, min=eps)
+
+            # Use squared L2 norm divided by target distance squared for stability
+            diff = embedded_dists_device - target_values_device_safe
+            loss = torch.sum((diff**2) / (target_values_device_safe**2))
+
+            # Divide by number of terms to keep loss scale reasonable
+            loss = loss / max(1, target_values_cpu.shape[0])
+
+            # If loss is NaN or infinite, replace with large but finite value
+            if torch.isnan(loss) or torch.isinf(loss):
+                loss = torch.tensor(
+                    1.0, device=loss.device, dtype=loss.dtype, requires_grad=True
+                )
+        else:
+            # For dense matrices, use masking
+            if embedded_distances is None:
+                raise ValueError(
+                    "embedded_distances must be provided for dense distance matrices"
+                )
+
+            if distance_matrix.is_sparse:
+                distance_matrix = distance_matrix.coalesce().to_dense()
+
+            n_points = distance_matrix.shape[0]
+            mask = torch.triu(torch.ones(n_points, n_points), diagonal=1).bool()
+            loss = torch.sum(
+                (embedded_distances[mask] / distance_matrix[mask] - 1) ** 2
+            )
+
     elif loss_type == "mse":
         # Mean squared error (stress function)
+        if embedded_distances is None:
+            raise ValueError("embedded_distances must be provided for MSE loss")
+
+        if distance_matrix.is_sparse:
+            distance_matrix = distance_matrix.coalesce().to_dense()
+
         loss = torch.sum((embedded_distances - distance_matrix) ** 2)
     else:
         raise ValueError(f"Unknown loss_type: {loss_type}. Use 'gu2019' or 'mse'")
@@ -140,10 +201,23 @@ class ConstantCurvatureEmbedding(nn.Module):
         """
         Compute pairwise distances in the constant curvature space.
 
+        For large point clouds, uses chunked computation to avoid OOM.
+
         Returns
         -------
         Tensor of shape (n_points, n_points)
         """
+        n_points = points.shape[0]
+        chunk_size = 256  # Use same chunk size as distance matrix computation
+
+        # Use chunked computation for large point clouds to avoid OOM
+        if n_points > chunk_size:
+            return self._pairwise_distances_chunked(points, chunk_size)
+        else:
+            return self._pairwise_distances_direct(points)
+
+    def _pairwise_distances_direct(self, points: Tensor) -> Tensor:
+        """Compute pairwise distances without chunking (for small point clouds)."""
         if self.curvature > 0:
             # Spherical distance: d(x,y) = r * arccos(<x,y> / r^2)
             radius: Tensor = self.radius  # type: ignore
@@ -162,28 +236,74 @@ class ConstantCurvatureEmbedding(nn.Module):
 
         else:  # curvature < 0
             # Hyperbolic distance in hyperboloid model (Nickel & Kiela 2017)
-            # Upper sheet hyperboloid: ⟨x,x⟩L = -x0^2 + x1^2 + ... + xd^2 = -r^2, x0 > 0
-            # Lorentzian inner product: ⟨x,y⟩L = -x0*y0 + x1*y1 + ... + xd*yd
-            # Distance: d(x,y) = r * arcosh(-⟨x,y⟩L / r^2)
-            # Note: For points on hyperboloid, -⟨x,y⟩L / r^2 >= 1
             radius: Tensor = self.radius  # type: ignore
             radius_squared: Tensor = self.radius_squared  # type: ignore
 
-            # Lorentzian inner product with signature (-, +, +, ...)
-            # Following Nickel & Kiela: ⟨x, y⟩L = -x0*y0 + x1*y1 + ... + xd*yd
             time = points[:, 0:1]
             spatial = points[:, 1:]
 
             lorentz_prod = -torch.mm(time, time.t()) + torch.mm(spatial, spatial.t())
             lorentz_prod_normalized = lorentz_prod / radius_squared
 
-            # Following Nickel & Kiela: d(x,y) = arcosh(-⟨x,y⟩L / r^2)
-            # Note: ⟨x,y⟩L is negative for points on hyperboloid, so -⟨x,y⟩L >= 1
-            # Add small epsilon to avoid infinite gradient at x=1 (arcosh'(1) = ∞)
-            # Use clamp to ensure all values are >= 1 + eps despite floating point errors
             eps = 1e-7
             input_to_acosh = torch.clamp(-lorentz_prod_normalized, min=1.0 + eps)
             distances = radius * torch.acosh(input_to_acosh)
+
+            # Ensure no NaN values from numerical instability
+            distances = torch.nan_to_num(
+                distances, nan=radius.item() * 10, posinf=radius.item() * 10
+            )
+
+        return distances
+
+    def _pairwise_distances_chunked(self, points: Tensor, chunk_size: int) -> Tensor:
+        """Compute pairwise distances in chunks to avoid OOM for large point clouds."""
+        n_points = points.shape[0]
+        distances = torch.zeros(
+            n_points, n_points, device=points.device, dtype=points.dtype
+        )
+
+        for i in range(0, n_points, chunk_size):
+            end_i = min(i + chunk_size, n_points)
+            points_i = points[i:end_i]
+
+            if self.curvature > 0:
+                # Spherical distance
+                radius: Tensor = self.radius  # type: ignore
+                radius_squared: Tensor = self.radius_squared  # type: ignore
+                dots = torch.mm(points_i, points.t()) / radius_squared
+                dots = torch.clamp(dots, -1.0 + 1e-7, 1.0 - 1e-7)
+                dists = radius * torch.acos(dots)
+                dists = torch.nan_to_num(dists, nan=0.0, posinf=radius.item() * 10)
+                distances[i:end_i] = dists
+
+            elif self.curvature == 0:
+                # Euclidean distance
+                diff = points_i.unsqueeze(1) - points.unsqueeze(0)
+                distances[i:end_i] = torch.norm(diff, dim=2)
+
+            else:  # curvature < 0
+                # Hyperbolic distance
+                radius: Tensor = self.radius  # type: ignore
+                radius_squared: Tensor = self.radius_squared  # type: ignore
+
+                time_i = points_i[:, 0:1]
+                spatial_i = points_i[:, 1:]
+                time_all = points[:, 0:1]
+                spatial_all = points[:, 1:]
+
+                lorentz_prod = -torch.mm(time_i, time_all.t()) + torch.mm(
+                    spatial_i, spatial_all.t()
+                )
+                lorentz_prod_normalized = lorentz_prod / radius_squared
+
+                eps = 1e-7
+                input_to_acosh = torch.clamp(-lorentz_prod_normalized, min=1.0 + eps)
+                dists = radius * torch.acosh(input_to_acosh)
+                dists = torch.nan_to_num(
+                    dists, nan=radius.item() * 10, posinf=radius.item() * 10
+                )
+                distances[i:end_i] = dists
 
         return distances
 
@@ -195,6 +315,61 @@ class ConstantCurvatureEmbedding(nn.Module):
         """Return the current embedded points."""
         return self.points
 
+    def _pairwise_distances_for_indices(self, indices: Tensor) -> Tensor:
+        """
+        Compute pairwise distances for specified index pairs.
+
+        Parameters
+        ----------
+        indices : Tensor, shape (2, num_pairs)
+            Row and column indices for which to compute distances
+
+        Returns
+        -------
+        Tensor, shape (num_pairs,)
+            Distances for the specified index pairs
+        """
+        row_idx = indices[0]
+        col_idx = indices[1]
+        points_i = self.points[row_idx]
+        points_j = self.points[col_idx]
+
+        if self.curvature > 0:
+            # Spherical distance
+            radius: Tensor = self.radius  # type: ignore
+            radius_squared: Tensor = self.radius_squared  # type: ignore
+            dots = (points_i * points_j).sum(dim=1) / radius_squared
+            dots = torch.clamp(dots, -1.0 + 1e-7, 1.0 - 1e-7)
+            distances = radius * torch.acos(dots)
+
+        elif self.curvature == 0:
+            # Euclidean distance
+            distances = torch.norm(points_i - points_j, dim=1)
+
+        else:  # curvature < 0
+            # Hyperbolic distance
+            radius: Tensor = self.radius  # type: ignore
+            radius_squared: Tensor = self.radius_squared  # type: ignore
+
+            time_i = points_i[:, 0]
+            spatial_i = points_i[:, 1:]
+            time_j = points_j[:, 0]
+            spatial_j = points_j[:, 1:]
+
+            lorentz_prod = -time_i * time_j + (spatial_i * spatial_j).sum(dim=1)
+            lorentz_prod_normalized = lorentz_prod / radius_squared
+
+            eps = 1e-7
+            input_to_acosh = torch.clamp(-lorentz_prod_normalized, min=1.0 + eps)
+            distances = radius * torch.acosh(input_to_acosh)
+
+            # Ensure no NaN or infinite values
+            distances = torch.nan_to_num(
+                distances, nan=radius.item() * 10, posinf=radius.item() * 10
+            )
+
+        return distances
+
 
 def fit_embedding(
     distance_matrix: Tensor,
@@ -204,9 +379,9 @@ def fit_embedding(
     n_iterations: int = 1000,
     lr: float = 0.01,
     verbose: bool = True,
-    device: torch.device | str | None = None,
+    device: str | None = None,
     loss_type: str = "gu2019",
-) -> ConstantCurvatureEmbedding:
+) -> "ConstantCurvatureEmbedding":
     """
     Fit a constant curvature embedding to preserve given distances.
 
@@ -277,8 +452,17 @@ def fit_embedding(
         optimizer.zero_grad()
 
         # Get embedded distances and compute loss
-        embedded_distances = model()
-        loss = compute_loss(embedded_distances, distance_matrix, loss_type)
+        # For sparse distance matrices, pass the model to compute loss only on sparse indices
+        if distance_matrix.is_sparse:
+            embedded_distances = None  # Won't be used for sparse matrices
+            loss = compute_loss(
+                embedded_distances, distance_matrix, loss_type, model=model
+            )
+        else:
+            embedded_distances = model()
+            loss = compute_loss(
+                embedded_distances, distance_matrix, loss_type, model=None
+            )
 
         loss.backward()
         optimizer.step()

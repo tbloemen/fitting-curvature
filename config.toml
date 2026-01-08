@@ -5,14 +5,15 @@
 dataset = "mnist"
 
 # Number of samples to use (use -1 for all samples)
-n_samples = 1000
+n_samples = -1
 
 [embedding]
 # Embedding dimension
 embed_dim = 2
 
 # Number of optimization iterations
-n_iterations = 5000
+# Reduced from 5000 for faster training on limited GPU memory
+n_iterations = 1000
 
 # Loss function: "gu2019" for relative distortion or "mse" for mean squared error
 loss_type = "gu2019"
@@ -23,6 +24,7 @@ loss_type = "gu2019"
 # Can specify per-curvature learning rates:
 # learning_rates = { "-1" = 0.0001, "0" = 0.01, "1" = 0.0001 }
 # Or use a default "k" key for all curvatures:
+# Reduced for stability with sparse distance matrices
 learning_rates = { k = 0.00001 }
 
 # Initial scale for embedding initialization
@@ -30,10 +32,25 @@ learning_rates = { k = 0.00001 }
 # Or specify a float value for manual control
 init_scale = "auto"
 
+# Sparsity threshold for distance matrix (0.0 to 1.0)
+# Represents the target percentage of distances to keep
+# For memory-constrained systems with large datasets, reduce this value
+# Example: 0.005 keeps the 0.5% smallest distances (nearest neighbors)
+# 1.0 = no sparsification (full dense matrix, not recommended for 70k+ samples)
+# RTX 3050 (3.68 GB) with 70k samples: use 0.005 for memory stability
+sparsity_threshold = 0.005
+
+# Chunk size for distance matrix computation
+# Number of data points to process at a time (reduces peak memory usage)
+# Smaller chunks = lower memory but slower computation
+# RTX 3050 with 70k samples: use 128-256 for memory-constrained systems
+chunk_size = 128
+
 [experiments]
 # Curvatures to test
 # k > 0: spherical, k = 0: Euclidean, k < 0: hyperbolic
-curvatures = [-1, 0, 0.5, 1]
+# Reduced from 4 to focus on most important geometries for faster training
+curvatures = [-1, 0, 1]
 
 [evaluation]
 # Number of neighbors for trustworthiness and continuity metrics
