@@ -1,3 +1,5 @@
+import tomllib
+
 import torch
 
 from src.embedding import fit_embedding
@@ -7,19 +9,52 @@ from src.metrics import evaluate_embedding
 from src.visualisation import default_plot, project_to_2d
 
 
+def load_config(config_path: str = "config.toml") -> dict:
+    """
+    Load configuration from TOML file.
+
+    Parameters
+    ----------
+    config_path : str
+        Path to the configuration file
+
+    Returns
+    -------
+    dict
+        Configuration dictionary
+    """
+    with open(config_path, "rb") as f:
+        config = tomllib.load(f)
+    return config
+
+
 def main():
+    config = load_config()
+
+    data_config = config["data"]
+    embedding_config = config["embedding"]
+    hyperparam_config = config["hyperparameters"]
+    experiment_config = config["experiments"]
+    evaluation_config = config["evaluation"]
+
     # Check device availability
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
     if torch.cuda.is_available():
         print(f"GPU: {torch.cuda.get_device_name(0)}")
 
-    X, _ = load_raw_data("mnist")
-    X = X[:1000]  # Use first 1000 samples to fit in GPU memory
+    # Load data
+    X, y = load_raw_data(data_config["dataset"])
+    n_samples = data_config["n_samples"]
+    if n_samples > 0:
+        X = X[:n_samples]
+        y = y[:n_samples]
     X = X.to(device)
+    print(f"\nLoaded {len(X)} samples")
 
-    embed_dim = 10  # Embedding dimension
-    n_iterations = 500
+    embed_dim = embedding_config["embed_dim"]
+    n_iterations = embedding_config["n_iterations"]
+    loss_type = embedding_config["loss_type"]
 
     # Calculate distance matrix in original space (stays on device)
     print("\nCalculating distance matrix...")
@@ -28,12 +63,30 @@ def main():
 
     # Calculate statistics once for all experiments
     print("\nCalculating distance statistics...")
-    init_scale = get_init_scale(A, embed_dim, verbose=True)
+    init_scale_value = hyperparam_config["init_scale"]
+    if init_scale_value == "auto":
+        init_scale = get_init_scale(A, embed_dim, verbose=True)
+    else:
+        init_scale = init_scale_value
+        print(f"Using init_scale: {init_scale}")
 
-    for k in [-1, 0, 1]:
+    curvatures = experiment_config["curvatures"]
+    learning_rates = hyperparam_config["learning_rates"]
+    n_neighbors = evaluation_config["n_neighbors"]
+
+    for k in curvatures:
         print(f"\n{'=' * 60}")
         print(f"Training embedding with curvature k = {k}")
+        print(f"Loss function: {loss_type}")
         print(f"{'=' * 60}")
+
+        # Get learning rate for this curvature
+        lr_key = str(k)
+        if lr_key in learning_rates:
+            lr = learning_rates[lr_key]
+        else:
+            lr = learning_rates["k"]
+            print(f"Using default learning rate: {lr}")
 
         # Train the embedding
         model = fit_embedding(
@@ -41,7 +94,7 @@ def main():
             embed_dim=embed_dim,
             curvature=k,
             n_iterations=n_iterations,
-            lr=0.01,
+            lr=lr,
             verbose=True,
             init_scale=init_scale,
             loss_type=loss_type,
@@ -53,7 +106,7 @@ def main():
         # Calculate embedding quality metrics
         X_cpu = X.detach().cpu().numpy()
         trust_score, continuity_score = evaluate_embedding(
-            X_cpu, embeddings, n_neighbors=5
+            X_cpu, embeddings, n_neighbors=n_neighbors
         )
         print(f"Trustworthiness: {trust_score:.4f}")
         print(f"Continuity: {continuity_score:.4f}")
