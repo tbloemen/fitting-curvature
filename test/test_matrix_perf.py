@@ -1,8 +1,10 @@
 """Performance tests for distance matrix calculation."""
 
 import time
-import torch
+
 import pytest
+import torch
+
 from src.matrices import calculate_distance_matrix
 
 
@@ -63,7 +65,7 @@ def test_gpu_faster_than_cpu(n_points):
 
     # Time CPU
     start = time.time()
-    dist_cpu = calculate_distance_matrix(X_cpu)
+    _ = calculate_distance_matrix(X_cpu)
     cpu_time = time.time() - start
 
     # Time GPU (with warm-up)
@@ -71,7 +73,7 @@ def test_gpu_faster_than_cpu(n_points):
     torch.cuda.synchronize()
 
     start = time.time()
-    dist_gpu = calculate_distance_matrix(X_gpu)
+    _ = calculate_distance_matrix(X_gpu)
     torch.cuda.synchronize()
     gpu_time = time.time() - start
 
@@ -82,7 +84,7 @@ def test_gpu_faster_than_cpu(n_points):
     )
 
     # GPU should be faster
-    assert gpu_time < cpu_time, f"GPU should be faster than CPU"
+    assert gpu_time < cpu_time, "GPU should be faster than CPU"
 
 
 def test_distance_matrix_correctness():

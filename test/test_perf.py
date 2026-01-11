@@ -1,8 +1,10 @@
 """Performance tests for constant curvature embeddings."""
 
 import time
-import torch
+
 import pytest
+import torch
+
 from src.embedding import ConstantCurvatureEmbedding
 
 
@@ -15,7 +17,7 @@ def perf_model():
     return ConstantCurvatureEmbedding(n_points, embed_dim, curvature, init_scale=0.1)
 
 
-def test_forward_pass_performance(perf_model, benchmark=None):
+def test_forward_pass_performance(perf_model ):
     """Test forward pass performance."""
     # Warm up
     for _ in range(10):
@@ -25,7 +27,7 @@ def test_forward_pass_performance(perf_model, benchmark=None):
     n_iterations = 100
     start = time.time()
     for _ in range(n_iterations):
-        distances = perf_model()
+        _ = perf_model()
     elapsed = time.time() - start
 
     elapsed_ms = elapsed * 1000  # Convert to ms
@@ -37,7 +39,7 @@ def test_forward_pass_performance(perf_model, benchmark=None):
     )
 
     # Log performance metrics
-    print(f"\nForward pass performance:")
+    print("\nForward pass performance:")
     print(f"  Total time for {n_iterations} iterations: {elapsed_ms:.2f} ms")
     print(f"  Time per iteration: {per_iteration:.4f} ms")
 
@@ -81,7 +83,7 @@ def test_gpu_performance_faster_than_cpu():
 
     speedup = cpu_time / gpu_time
 
-    print(f"\nGPU vs CPU performance:")
+    print("\nGPU vs CPU performance:")
     print(f"  CPU time: {cpu_time:.4f}s")
     print(f"  GPU time: {gpu_time:.4f}s")
     print(f"  Speedup: {speedup:.2f}x")
