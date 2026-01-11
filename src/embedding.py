@@ -3,6 +3,7 @@ import torch.nn as nn
 from torch import Tensor
 from tqdm import tqdm
 
+from src.manifolds import Euclidean, Hyperboloid, Manifold, Sphere
 from src.riemannian_optimizer import RiemannianSGD
 
 
@@ -72,69 +73,26 @@ class ConstantCurvatureEmbedding(nn.Module):
         else:
             self.device = torch.device(device)
 
-        # Compute radius for curved spaces (store as buffer, not parameter)
-        # We precompute radius_squared since it's used frequently in distance calculations
-        if curvature != 0:
-            radius_val = 1.0 / torch.sqrt(
-                torch.tensor(abs(curvature), device=self.device)
-            )
-            self.register_buffer("radius", radius_val)
-            self.register_buffer("radius_squared", radius_val * radius_val)
-        else:
-            # Dummy values for Euclidean (not used but stored for consistency)
-            self.register_buffer("radius", torch.tensor(1.0, device=self.device))
-            self.register_buffer(
-                "radius_squared", torch.tensor(1.0, device=self.device)
-            )
+        # Create appropriate manifold
+        self.manifold = self._create_manifold(curvature)
 
-        # Initialize embeddings based on curvature
-        # RSGD works with full ambient coordinates and maintains manifold constraints.
+        # Initialize points on manifold
+        points_init = self.manifold.init_points(
+            n_points, embed_dim, init_scale, self.device
+        )
+        self.points = nn.Parameter(points_init)
 
+        # Set ambient_dim for backward compatibility
+        self.ambient_dim = self.manifold.ambient_dim_for_embed_dim(embed_dim)
+
+    def _create_manifold(self, curvature: float) -> Manifold:
+        """Factory method to create appropriate manifold."""
         if curvature > 0:
-            # Spherical: points on sphere in R^(d+1)
-            # Initialize with small random points and project to sphere
-            self.ambient_dim = embed_dim + 1
-
-            # Initialize random spatial coordinates
-            spatial_init = (
-                torch.randn(n_points, embed_dim, device=self.device) * init_scale
-            )
-
-            # Project to sphere by computing x0 from constraint
-            radius_squared: Tensor = self.radius_squared  # type: ignore
-            squared_norm = (spatial_init * spatial_init).sum(dim=1, keepdim=True)
-            squared_norm = torch.clamp(squared_norm, max=radius_squared - 1e-7)
-            x0 = torch.sqrt(radius_squared - squared_norm)
-            points_init = torch.cat([x0, spatial_init], dim=1)
-
-            self.points = nn.Parameter(points_init)
-
+            return Sphere(curvature)
         elif curvature == 0:
-            # Euclidean: points in R^d (no constraint)
-            self.ambient_dim = embed_dim
-            self.points = nn.Parameter(
-                torch.randn(n_points, embed_dim, device=self.device) * init_scale
-            )
-
-        else:  # curvature < 0
-            # Hyperbolic: hyperboloid model in R^(d+1)
-            # Initialize spatial coordinates and project to hyperboloid
-            self.ambient_dim = embed_dim + 1
-
-            # Initialize random spatial coordinates
-            spatial_init = (
-                torch.randn(n_points, embed_dim, device=self.device) * init_scale
-            )
-
-            # Project to hyperboloid by computing x0 from constraint
-            radius_squared: Tensor = self.radius_squared  # type: ignore
-            squared_spatial_norm = (spatial_init * spatial_init).sum(
-                dim=1, keepdim=True
-            )
-            time = torch.sqrt(radius_squared + squared_spatial_norm)
-            points_init = torch.cat([time, spatial_init], dim=1)
-
-            self.points = nn.Parameter(points_init)
+            return Euclidean(curvature)
+        else:
+            return Hyperboloid(curvature)
 
     def pairwise_distances(self, points: Tensor) -> Tensor:
         """
@@ -144,48 +102,7 @@ class ConstantCurvatureEmbedding(nn.Module):
         -------
         Tensor of shape (n_points, n_points)
         """
-        if self.curvature > 0:
-            # Spherical distance: d(x,y) = r * arccos(<x,y> / r^2)
-            radius: Tensor = self.radius  # type: ignore
-            radius_squared: Tensor = self.radius_squared  # type: ignore
-
-            # Compute dot products
-            dots = torch.mm(points, points.t()) / radius_squared
-            # Clamp to avoid numerical issues with arccos
-            dots = torch.clamp(dots, -1.0 + 1e-7, 1.0 - 1e-7)
-            distances = radius * torch.acos(dots)
-
-        elif self.curvature == 0:
-            # Euclidean distance
-            diff = points.unsqueeze(0) - points.unsqueeze(1)
-            distances = torch.norm(diff, dim=2)
-
-        else:  # curvature < 0
-            # Hyperbolic distance in hyperboloid model (Nickel & Kiela 2017)
-            # Upper sheet hyperboloid: ⟨x,x⟩L = -x0^2 + x1^2 + ... + xd^2 = -r^2, x0 > 0
-            # Lorentzian inner product: ⟨x,y⟩L = -x0*y0 + x1*y1 + ... + xd*yd
-            # Distance: d(x,y) = r * arcosh(-⟨x,y⟩L / r^2)
-            # Note: For points on hyperboloid, -⟨x,y⟩L / r^2 >= 1
-            radius: Tensor = self.radius  # type: ignore
-            radius_squared: Tensor = self.radius_squared  # type: ignore
-
-            # Lorentzian inner product with signature (-, +, +, ...)
-            # Following Nickel & Kiela: ⟨x, y⟩L = -x0*y0 + x1*y1 + ... + xd*yd
-            time = points[:, 0:1]
-            spatial = points[:, 1:]
-
-            lorentz_prod = -torch.mm(time, time.t()) + torch.mm(spatial, spatial.t())
-            lorentz_prod_normalized = lorentz_prod / radius_squared
-
-            # Following Nickel & Kiela: d(x,y) = arcosh(-⟨x,y⟩L / r^2)
-            # Note: ⟨x,y⟩L is negative for points on hyperboloid, so -⟨x,y⟩L >= 1
-            # Add small epsilon to avoid infinite gradient at x=1 (arcosh'(1) = ∞)
-            # Use clamp to ensure all values are >= 1 + eps despite floating point errors
-            eps = 1e-7
-            input_to_acosh = torch.clamp(-lorentz_prod_normalized, min=1.0 + eps)
-            distances = radius * torch.acosh(input_to_acosh)
-
-        return distances
+        return self.manifold.pairwise_distances(points)
 
     def forward(self) -> Tensor:
         """Return current embedding distances."""
