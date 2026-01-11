@@ -126,23 +126,6 @@ class Manifold(ABC):
         pass
 
     @abstractmethod
-    def project_to_manifold(self, points: Tensor) -> Tensor:
-        """
-        Project points back onto the manifold (for numerical stability).
-
-        Parameters
-        ----------
-        points : Tensor
-            Approximate points, shape (..., ambient_dim)
-
-        Returns
-        -------
-        Tensor
-            Points projected onto manifold, shape (..., ambient_dim)
-        """
-        pass
-
-    @abstractmethod
     def ambient_dim_for_embed_dim(self, embed_dim: int) -> int:
         """
         Return ambient dimension for given embedding dimension.
@@ -187,10 +170,6 @@ class Euclidean(Manifold):
     def exp_map(self, points: Tensor, tangent_vec: Tensor) -> Tensor:
         """Exponential map is just addition."""
         return points + tangent_vec
-
-    def project_to_manifold(self, points: Tensor) -> Tensor:
-        """No projection needed for Euclidean space."""
-        return points
 
     def ambient_dim_for_embed_dim(self, embed_dim: int) -> int:
         """Ambient dimension equals intrinsic dimension."""
@@ -286,12 +265,6 @@ class Sphere(Manifold):
         x_new = x_new / x_new_norm * (radius_squared**0.5)
 
         return x_new
-
-    def project_to_manifold(self, points: Tensor) -> Tensor:
-        """Project approximate points back to sphere."""
-        radius_squared = self.radius_squared
-        x_new_norm = torch.norm(points, dim=-1, keepdim=True)
-        return points / x_new_norm * (radius_squared**0.5)
 
     def ambient_dim_for_embed_dim(self, embed_dim: int) -> int:
         """Ambient dimension is embed_dim + 1."""
@@ -416,14 +389,6 @@ class Hyperboloid(Manifold):
         x_new = torch.cat([x0, spatial], dim=-1)
 
         return x_new
-
-    def project_to_manifold(self, points: Tensor) -> Tensor:
-        """Project approximate points back to hyperboloid."""
-        radius_squared = self.radius_squared
-        spatial = points[..., 1:]
-        spatial_norm_sq = (spatial**2).sum(dim=-1, keepdim=True)
-        x0 = torch.sqrt(radius_squared + spatial_norm_sq)
-        return torch.cat([x0, spatial], dim=-1)
 
     def ambient_dim_for_embed_dim(self, embed_dim: int) -> int:
         """Ambient dimension is embed_dim + 1."""
