@@ -8,8 +8,9 @@ Implementation following:
 """
 
 import torch
-from torch import Tensor
 from torch.optim.optimizer import Optimizer
+
+from src.manifolds import Euclidean, Hyperboloid, Manifold, Sphere
 
 
 class RiemannianSGD(Optimizer):
@@ -43,6 +44,18 @@ class RiemannianSGD(Optimizer):
         defaults = dict(lr=lr, curvature=curvature)
         super(RiemannianSGD, self).__init__(params, defaults)
 
+        # Create manifold for this optimizer
+        self.manifold = self._create_manifold(curvature)
+
+    def _create_manifold(self, curvature: float) -> Manifold:
+        """Factory method to create appropriate manifold."""
+        if curvature > 0:
+            return Sphere(curvature)
+        elif curvature == 0:
+            return Euclidean(curvature)
+        else:
+            return Hyperboloid(curvature)
+
     @torch.no_grad()
     def step(self, closure=None):  # pyright: ignore
         """
@@ -60,131 +73,18 @@ class RiemannianSGD(Optimizer):
 
         for group in self.param_groups:
             lr = group["lr"]
-            curvature = group["curvature"]
 
             for p in group["params"]:
                 if p.grad is None:
                     continue
 
-                # Get Euclidean gradient h
+                # Get Euclidean gradient
                 h = p.grad.data
 
-                if curvature > 0:
-                    # Spherical case
-                    # Project gradient to tangent space and update via exponential map
-                    radius_sq = 1.0 / abs(curvature)
-                    v = self._project_sphere(p.data, h, radius_sq)
-                    p.data = self._exp_map_sphere(p.data, -lr * v, radius_sq)
+                # Project to tangent space
+                v = self.manifold.project_to_tangent(p.data, h)
 
-                elif curvature < 0:
-                    # Hyperbolic case (lines 7-9 in Algorithm 1)
-                    # Project gradient to tangent space and update via exponential map
-                    radius_sq = 1.0 / abs(curvature)
-                    v = self._riemannian_grad_hyperbolic(p.data, h, radius_sq)
-                    p.data = self._exp_map_hyperbolic(p.data, -lr * v, radius_sq)
-
-                else:  # curvature == 0
-                    # Euclidean case (line 10 in Algorithm 1)
-                    # Standard gradient descent
-                    p.data = p.data - lr * h
+                # Update via exponential map
+                p.data = self.manifold.exp_map(p.data, -lr * v)
 
         return loss
-
-    def _project_sphere(
-        self, points: Tensor, grad_points: Tensor, radius_sq: float = 1.0
-    ) -> Tensor:
-        """
-        Project gradient to tangent space of sphere.
-
-        Parameters are full ambient coordinates (x0, x1, ..., xd).
-        """
-        # Project to tangent space: proj_x(h) = h - ⟨h, x⟩x
-        inner_prod = (grad_points * points).sum(dim=-1, keepdim=True)
-        v = grad_points - inner_prod * points
-
-        return v
-
-    def _exp_map_sphere(
-        self, points: Tensor, v_points: Tensor, radius_sq: float = 1.0
-    ) -> Tensor:
-        """
-        Exponential map on sphere.
-
-        Parameters and updates are in full ambient coordinates.
-        """
-        radius = torch.sqrt(torch.tensor(radius_sq, device=points.device))
-
-        # Compute norm of tangent vector
-        v_norm = torch.norm(v_points, dim=-1, keepdim=True)
-        v_norm = torch.clamp(v_norm, min=1e-10)
-
-        # Exponential map: exp_x(v) = cos(||v||/r) x + sin(||v||/r) (r * v/||v||)
-        x_new = (
-            torch.cos(v_norm / radius) * points
-            + torch.sin(v_norm / radius) * v_points / v_norm * radius
-        )
-
-        # Normalize to maintain constraint exactly
-        x_new_norm = torch.norm(x_new, dim=-1, keepdim=True)
-        x_new = (
-            x_new
-            / x_new_norm
-            * torch.sqrt(torch.tensor(radius_sq, device=points.device))
-        )
-
-        return x_new
-
-    def _riemannian_grad_hyperbolic(
-        self, points: Tensor, grad_points: Tensor, radius_sq: float = 1.0
-    ) -> Tensor:
-        """
-        Compute Riemannian gradient for hyperbolic space (hyperboloid model).
-
-        Parameters are full ambient coordinates (x0, x1, ..., xd).
-        """
-        # Apply inverse metric tensor: g^{-1} = diag(-1, 1, ..., 1)
-        h = grad_points.clone()
-        h[..., 0:1] = -h[..., 0:1]
-
-        # Project to tangent space: proj^H_x(h) = h + ⟨x, h⟩_L * x
-        # Lorentzian inner product: ⟨x, h⟩_L = -x_0 * h_0 + x_1 * h_1 + ...
-        lorentz_product = -points[..., 0:1] * h[..., 0:1] + (
-            points[..., 1:] * h[..., 1:]
-        ).sum(dim=-1, keepdim=True)
-        v = h + lorentz_product * points
-
-        return v
-
-    def _exp_map_hyperbolic(
-        self, points: Tensor, v_points: Tensor, radius_sq: float = 1.0
-    ) -> Tensor:
-        """
-        Exponential map on hyperboloid.
-
-        Parameters and updates are in full ambient coordinates.
-        """
-        radius = torch.sqrt(torch.tensor(radius_sq, device=points.device))
-
-        # Compute Lorentzian norm: ||v||_L^2 = ⟨v, v⟩_L = -v0^2 + ||v_spatial||^2
-        v_lorentz_sq = -(v_points[..., 0:1] ** 2) + (v_points[..., 1:] ** 2).sum(
-            dim=-1, keepdim=True
-        )
-
-        # Clamp to ensure positive (for spacelike vectors, this should be positive)
-        v_lorentz_sq = torch.clamp(v_lorentz_sq, min=1e-15)
-        v_norm = torch.sqrt(v_lorentz_sq)
-
-        # Exponential map: exp_x(v) = cosh(||v||_L/r) x + sinh(||v||_L/r) (r * v/||v||_L)
-        x_new = (
-            torch.cosh(v_norm / radius) * points
-            + torch.sinh(v_norm / radius) * v_points / v_norm * radius
-        )
-
-        # Normalize to maintain hyperboloid constraint exactly
-        # For hyperboloid: -x0^2 + ||spatial||^2 = -r^2
-        spatial = x_new[..., 1:]
-        spatial_norm_sq = (spatial**2).sum(dim=-1, keepdim=True)
-        x0 = torch.sqrt(radius_sq + spatial_norm_sq)
-        x_new = torch.cat([x0, spatial], dim=-1)
-
-        return x_new
