@@ -38,3 +38,31 @@ curvatures = [-1, 0, 0.5, 1]
 [evaluation]
 # Number of neighbors for trustworthiness and continuity metrics
 n_neighbors = 5
+
+[batching]
+# Batch size: number of pairs to sample per iteration
+# Recommended: 2048-8192 for GPUs with 8-16GB memory
+batch_size = 4096
+
+# Pair sampling strategy: "random", "knn", "stratified", "negative"
+# - "random": Uniformly random pair sampling (unbiased, baseline)
+# - "knn": K-nearest neighbor sampling (preserves local structure)
+# - "stratified": Distance-stratified sampling (balances local/global)
+# - "negative": Contrastive sampling (positive k-NN + negative random pairs)
+sampler_type = "knn"
+
+# Sampler-specific parameters
+[batching.sampler_params]
+# For KNN and Negative samplers: number of neighbors
+k = 15
+
+# For Stratified sampler: number of distance bins
+n_bins = 10
+
+# For Stratified sampler: weight for sampling close pairs vs far pairs
+# Higher values bias toward close pairs (local structure)
+close_weight = 3.0
+
+# For Negative sampler: ratio of positive (k-NN) to negative (random) pairs
+# 0.7 means 70% from k-NN, 30% random
+positive_ratio = 0.7
