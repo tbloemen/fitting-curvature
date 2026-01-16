@@ -11,9 +11,9 @@ Distances are computed on-the-fly during training.
 
 import pytest
 import torch
+from conftest import calculate_distance_matrix, compute_loss
 
-from conftest import calculate_distance_matrix
-from src.embedding import compute_loss, fit_embedding
+from src.embedding import fit_embedding
 
 
 @pytest.fixture

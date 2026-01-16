@@ -9,43 +9,6 @@ from src.riemannian_optimizer import RiemannianSGD
 from src.samplers import create_sampler
 
 
-def compute_loss(
-    embedded_distances: Tensor,
-    distance_matrix: Tensor,
-    loss_type: str = "gu2019",
-) -> Tensor:
-    """
-    Compute loss function for embedding optimization.
-
-    Parameters
-    ----------
-    embedded_distances : Tensor, shape (N, N)
-        Pairwise distances in the embedded space
-    distance_matrix : Tensor, shape (N, N)
-        Target pairwise distances to preserve
-    loss_type : str
-        Type of loss function: 'gu2019' for relative distortion or 'mse' for mean squared error
-
-    Returns
-    -------
-    Tensor
-        Scalar loss value
-    """
-    if loss_type == "gu2019":
-        # Gu et al. (2019) relative distortion loss (Eq 2)
-        # L = sum((d_P(xi,xj)/d_G(Xi,Xj) - 1)^2) for i<j
-        n_points = distance_matrix.shape[0]
-        mask = torch.triu(torch.ones(n_points, n_points), diagonal=1).bool()
-        loss = torch.sum((embedded_distances[mask] / distance_matrix[mask] - 1) ** 2)
-    elif loss_type == "mse":
-        # Mean squared error (stress function)
-        loss = torch.sum((embedded_distances - distance_matrix) ** 2)
-    else:
-        raise ValueError(f"Unknown loss_type: {loss_type}. Use 'gu2019' or 'mse'")
-
-    return loss
-
-
 def compute_loss_batched(
     embedded_distances: Tensor,
     target_distances: Tensor,

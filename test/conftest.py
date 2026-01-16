@@ -46,3 +46,52 @@ def calculate_distance_matrix(X: Tensor) -> Tensor:
     distances = torch.sqrt(squared_distances)
 
     return distances
+
+
+def compute_loss(
+    embedded_distances: Tensor,
+    target_distances: Tensor,
+    loss_type: str = "gu2019",
+) -> Tensor:
+    """
+    Compute loss function for full distance matrices.
+
+    Used in testing to evaluate embedding quality on all pairs.
+
+    Parameters
+    ----------
+    embedded_distances : Tensor, shape (N, N)
+        Pairwise distances in the embedded space
+    target_distances : Tensor, shape (N, N)
+        Target pairwise distances from original space
+    loss_type : str
+        Type of loss function: 'gu2019' for relative distortion or 'mse' for mean squared error
+
+    Returns
+    -------
+    Tensor
+        Scalar loss value
+    """
+    if loss_type == "gu2019":
+        # Gu et al. (2019) relative distortion loss
+        # L = sum((d_embedded / d_target - 1)^2)
+        # Ignore diagonal (self-distances) and use only upper triangle to avoid double-counting
+        mask = torch.triu(
+            torch.ones_like(embedded_distances, dtype=torch.bool), diagonal=1
+        )
+        embedded_masked = embedded_distances[mask]
+        target_masked = target_distances[mask]
+        loss = torch.sum((embedded_masked / (target_masked + 1e-8) - 1) ** 2)
+    elif loss_type == "mse":
+        # Mean squared error (stress function)
+        # Ignore diagonal and use only upper triangle
+        mask = torch.triu(
+            torch.ones_like(embedded_distances, dtype=torch.bool), diagonal=1
+        )
+        embedded_masked = embedded_distances[mask]
+        target_masked = target_distances[mask]
+        loss = torch.sum((embedded_masked - target_masked) ** 2)
+    else:
+        raise ValueError(f"Unknown loss_type: {loss_type}. Use 'gu2019' or 'mse'")
+
+    return loss
