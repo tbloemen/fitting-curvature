@@ -1,3 +1,5 @@
+import math
+
 import torch
 from torch import Tensor
 
@@ -28,18 +30,18 @@ def compute_euclidean_distances_batched(
     return torch.sqrt((diff**2).sum(dim=1))
 
 
-def get_init_scale_from_data(
-    X: Tensor, embed_dim: int, n_samples: int = 10000, verbose: bool = True
-) -> float:
+def normalize_data(X: Tensor, n_samples: int = 10000, verbose: bool = True) -> Tensor:
     """
-    Compute initialization scale from raw data by sampling pairs.
+    Normalize data so that mean pairwise distance equals 1.
+
+    This normalization makes the data geometry-agnostic, allowing
+    embeddings to use a fixed initialization scale regardless of the
+    original data scale.
 
     Parameters
     ----------
     X : Tensor, shape (N, D)
         Input data points
-    embed_dim : int
-        Target embedding dimension
     n_samples : int
         Number of pairs to sample for estimation (default: 10000)
     verbose : bool
@@ -47,13 +49,14 @@ def get_init_scale_from_data(
 
     Returns
     -------
-    float
-        Initialization scale
+    Tensor
+        - Normalized data tensor with mean pairwise distance = 1
     """
     n_points = X.shape[0]
     device = X.device
 
     # Sample random pairs
+    n_samples = min(n_samples, n_points * (n_points - 1) // 2)
     indices_i = torch.randint(0, n_points, (n_samples,), device=device)
     indices_j = torch.randint(0, n_points, (n_samples,), device=device)
 
@@ -67,17 +70,43 @@ def get_init_scale_from_data(
     distances = compute_euclidean_distances_batched(X, indices_i, indices_j)
 
     mean_distance = distances.mean().item()
-    std_distance = distances.std().item()
-
-    init_scale = (
-        mean_distance
-        / (2 * torch.sqrt(torch.tensor(embed_dim, dtype=torch.float32))).item()
-    )
 
     if verbose:
+        std_distance = distances.std().item()
         print(
-            f"Distance statistics (sampled): mean={mean_distance:.4f}, std={std_distance:.4f}"
+            f"Original distance statistics: mean={mean_distance:.4f}, std={std_distance:.4f}"
         )
-        print(f"Initialization scale: {init_scale:.4f}")
 
-    return init_scale
+    # Normalize data so mean distance = 1
+    X_normalized = X / mean_distance
+
+    if verbose:
+        print(f"Normalized data (divided by {mean_distance:.4f})")
+
+    return X_normalized
+
+
+def get_default_init_scale(embed_dim: int) -> float:
+    """
+    Get a principled initialization scale for normalized data.
+
+    For data with mean pairwise distance = 1, this returns the standard
+    deviation σ such that points initialized as N(0, σ²I) will have
+    expected pairwise distance ≈ 1.
+
+    For Gaussian-distributed points in d dimensions:
+        E[||x - y||] ≈ σ * sqrt(2 * d)
+
+    So to get E[||x - y||] = 1, we need σ = 1 / sqrt(2 * d).
+
+    Parameters
+    ----------
+    embed_dim : int
+        Target embedding dimension
+
+    Returns
+    -------
+    float
+        Initialization scale (standard deviation)
+    """
+    return 1.0 / math.sqrt(2 * embed_dim)

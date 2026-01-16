@@ -4,7 +4,7 @@ import torch
 
 from src.embedding import fit_embedding
 from src.load_data import load_raw_data
-from src.matrices import get_init_scale_from_data
+from src.matrices import get_default_init_scale, normalize_data
 from src.metrics import evaluate_embedding
 from src.visualisation import default_plot, project_to_2d
 
@@ -57,14 +57,18 @@ def main():
     n_iterations = embedding_config["n_iterations"]
     loss_type = embedding_config["loss_type"]
 
-    # Calculate initialization scale from data (uses sampling for efficiency)
-    print("\nCalculating distance statistics...")
+    # Normalize data so mean pairwise distance = 1
+    print("\nNormalizing data...")
+    X = normalize_data(X, verbose=True)
+
+    # Get initialization scale
     init_scale_value = hyperparam_config["init_scale"]
     if init_scale_value == "auto":
-        init_scale = get_init_scale_from_data(X, embed_dim, verbose=True)
+        init_scale = get_default_init_scale(embed_dim)
+        print(f"Using default init_scale: {init_scale:.4f}")
     else:
         init_scale = init_scale_value
-        print(f"Using init_scale: {init_scale}")
+        print(f"Using manual init_scale: {init_scale}")
 
     curvatures = experiment_config["curvatures"]
     learning_rates = hyperparam_config["learning_rates"]
