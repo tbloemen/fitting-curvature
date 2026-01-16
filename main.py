@@ -4,7 +4,7 @@ import torch
 
 from src.embedding import fit_embedding
 from src.load_data import load_raw_data
-from src.matrices import calculate_distance_matrix, get_init_scale
+from src.matrices import get_init_scale_from_data
 from src.metrics import evaluate_embedding
 from src.visualisation import default_plot, project_to_2d
 
@@ -36,6 +36,7 @@ def main():
     hyperparam_config = config["hyperparameters"]
     experiment_config = config["experiments"]
     evaluation_config = config["evaluation"]
+    batching_config = config.get("batching", {})
 
     # Check device availability
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -50,22 +51,17 @@ def main():
         X = X[:n_samples]
         y = y[:n_samples]
     X = X.to(device)
-    print(f"\nLoaded {len(X)} samples")
+    print(f"\nLoaded {len(X)} samples with {X.shape[1]} features")
 
     embed_dim = embedding_config["embed_dim"]
     n_iterations = embedding_config["n_iterations"]
     loss_type = embedding_config["loss_type"]
 
-    # Calculate distance matrix in original space (stays on device)
-    print("\nCalculating distance matrix...")
-    A = calculate_distance_matrix(X)
-    print(f"Distance matrix shape: {A.shape}, device: {A.device}")
-
-    # Calculate statistics once for all experiments
+    # Calculate initialization scale from data (uses sampling for efficiency)
     print("\nCalculating distance statistics...")
     init_scale_value = hyperparam_config["init_scale"]
     if init_scale_value == "auto":
-        init_scale = get_init_scale(A, embed_dim, verbose=True)
+        init_scale = get_init_scale_from_data(X, embed_dim, verbose=True)
     else:
         init_scale = init_scale_value
         print(f"Using init_scale: {init_scale}")
@@ -74,10 +70,16 @@ def main():
     learning_rates = hyperparam_config["learning_rates"]
     n_neighbors = evaluation_config["n_neighbors"]
 
+    # Extract batching parameters
+    batch_size = batching_config.get("batch_size", 4096)
+    sampler_type = batching_config.get("sampler_type", "random")
+    sampler_params = batching_config.get("sampler_params", {})
+
     for k in curvatures:
         print(f"\n{'=' * 60}")
         print(f"Training embedding with curvature k = {k}")
         print(f"Loss function: {loss_type}")
+        print(f"Batch size: {batch_size}, sampler: {sampler_type}")
         print(f"{'=' * 60}")
 
         # Get learning rate for this curvature
@@ -88,9 +90,9 @@ def main():
             lr = learning_rates["k"]
             print(f"Using default learning rate: {lr}")
 
-        # Train the embedding
+        # Train the embedding (distances computed on-the-fly from raw data)
         model = fit_embedding(
-            distance_matrix=A,
+            data=X,
             embed_dim=embed_dim,
             curvature=k,
             n_iterations=n_iterations,
@@ -98,6 +100,9 @@ def main():
             verbose=True,
             init_scale=init_scale,
             loss_type=loss_type,
+            sampler_type=sampler_type,
+            batch_size=batch_size,
+            sampler_kwargs=sampler_params,
         )
 
         # Get the learned embeddings (move to CPU for visualization)

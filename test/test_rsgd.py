@@ -4,12 +4,16 @@ Tests for Riemannian SGD implementation.
 Following:
 - Gu et al. (2019): "Learning Mixed-Curvature Representations in Products of Model Spaces"
 - Nickel & Kiela (2018): "Learning Continuous Hierarchies in the Lorentz Model"
+
+Note: fit_embedding now takes raw data instead of a distance matrix.
+Distances are computed on-the-fly during training.
 """
 
 import pytest
 import torch
-from src.embedding import compute_loss, fit_embedding
-from src.matrices import calculate_distance_matrix
+from conftest import calculate_distance_matrix, compute_loss
+
+from src.embedding import fit_embedding
 
 
 @pytest.fixture
@@ -19,17 +23,18 @@ def synthetic_dataset():
     n_samples = 50
     dim = 5
     X = torch.randn(n_samples, dim)
+    # Return both raw data and distance matrix for loss computation
     distance_matrix = calculate_distance_matrix(X)
-    return distance_matrix
+    return X, distance_matrix
 
 
 def test_rsgd_basic_convergence(synthetic_dataset):
     """Test that RSGD optimizer converges without producing NaN values."""
-    distance_matrix = synthetic_dataset
+    X, distance_matrix = synthetic_dataset
     embed_dim = 2
 
     model = fit_embedding(
-        distance_matrix=distance_matrix,
+        data=X,  # Now takes raw data
         embed_dim=embed_dim,
         curvature=-1.0,
         init_scale=0.001,  # Paper uses very small initialization
@@ -52,12 +57,12 @@ def test_rsgd_basic_convergence(synthetic_dataset):
 
 def test_rsgd_convergence_quality(synthetic_dataset):
     """Test RSGD convergence quality on different geometries."""
-    distance_matrix = synthetic_dataset
+    X, distance_matrix = synthetic_dataset
     embed_dim = 2
 
     # Test hyperbolic - use smaller lr for curved space
     model_hyp = fit_embedding(
-        distance_matrix=distance_matrix,
+        data=X,
         embed_dim=embed_dim,
         curvature=-1.0,
         init_scale=0.001,
@@ -68,7 +73,7 @@ def test_rsgd_convergence_quality(synthetic_dataset):
 
     # Test Euclidean - can use larger lr
     model_euc = fit_embedding(
-        distance_matrix=distance_matrix,
+        data=X,
         embed_dim=embed_dim,
         curvature=0.0,
         init_scale=0.1,
@@ -79,7 +84,7 @@ def test_rsgd_convergence_quality(synthetic_dataset):
 
     # Test spherical - use smaller lr for curved space
     model_sph = fit_embedding(
-        distance_matrix=distance_matrix,
+        data=X,
         embed_dim=embed_dim,
         curvature=1.0,
         init_scale=0.001,
@@ -109,11 +114,11 @@ def test_rsgd_convergence_quality(synthetic_dataset):
 
 def test_rsgd_hyperboloid_constraint(synthetic_dataset):
     """Test that RSGD maintains the hyperboloid constraint."""
-    distance_matrix = synthetic_dataset
+    X, _ = synthetic_dataset
     embed_dim = 2
 
     model = fit_embedding(
-        distance_matrix=distance_matrix,
+        data=X,
         embed_dim=embed_dim,
         curvature=-1.0,
         init_scale=0.001,
@@ -134,20 +139,19 @@ def test_rsgd_hyperboloid_constraint(synthetic_dataset):
     expected = torch.ones_like(constraint) * (-1.0)
 
     # Allow small numerical error
-    assert torch.allclose(constraint, expected, atol=1e-5), (
-        "Hyperboloid constraint violated"
-    )
+    assert torch.allclose(
+        constraint, expected, atol=1e-5
+    ), "Hyperboloid constraint violated"
 
 
 def test_rsgd_spherical_constraint():
     """Test that RSGD maintains the spherical constraint."""
     torch.manual_seed(42)
     X = torch.randn(20, 3)
-    distance_matrix = calculate_distance_matrix(X)
 
     # RSGD should work for spherical geometry
     model_spherical = fit_embedding(
-        distance_matrix=distance_matrix,
+        data=X,
         embed_dim=2,
         curvature=1.0,
         init_scale=0.001,
@@ -170,11 +174,11 @@ def test_rsgd_spherical_constraint():
 
 def test_gu2019_loss_convergence(synthetic_dataset):
     """Test that Gu et al. (2019) loss function works correctly."""
-    distance_matrix = synthetic_dataset
+    X, distance_matrix = synthetic_dataset
     embed_dim = 2
 
     model = fit_embedding(
-        distance_matrix=distance_matrix,
+        data=X,
         embed_dim=embed_dim,
         curvature=-1.0,
         init_scale=0.001,
@@ -193,19 +197,19 @@ def test_gu2019_loss_convergence(synthetic_dataset):
         distances = model().cpu()
         final_loss = compute_loss(distances, distance_matrix.cpu(), "gu2019").item()
 
-    assert torch.isfinite(torch.tensor(final_loss)), (
-        "Gu et al. loss produced infinite loss"
-    )
+    assert torch.isfinite(
+        torch.tensor(final_loss)
+    ), "Gu et al. loss produced infinite loss"
     assert final_loss < 10000, f"Gu et al. loss too high: {final_loss}"
 
 
 def test_mse_loss_convergence(synthetic_dataset):
     """Test that MSE loss function still works correctly."""
-    distance_matrix = synthetic_dataset
+    X, distance_matrix = synthetic_dataset
     embed_dim = 2
 
     model = fit_embedding(
-        distance_matrix=distance_matrix,
+        data=X,
         embed_dim=embed_dim,
         curvature=-1.0,
         init_scale=0.001,
@@ -229,12 +233,12 @@ def test_mse_loss_convergence(synthetic_dataset):
 
 def test_loss_type_comparison(synthetic_dataset):
     """Compare Gu et al. (2019) loss vs MSE loss."""
-    distance_matrix = synthetic_dataset
+    X, distance_matrix = synthetic_dataset
     embed_dim = 2
 
     # Fit with Gu et al. loss
     model_gu = fit_embedding(
-        distance_matrix=distance_matrix,
+        data=X,
         embed_dim=embed_dim,
         curvature=-1.0,
         init_scale=0.001,
@@ -246,7 +250,7 @@ def test_loss_type_comparison(synthetic_dataset):
 
     # Fit with MSE loss
     model_mse = fit_embedding(
-        distance_matrix=distance_matrix,
+        data=X,
         embed_dim=embed_dim,
         curvature=-1.0,
         init_scale=0.001,
@@ -279,11 +283,11 @@ def test_loss_type_comparison(synthetic_dataset):
 @pytest.mark.parametrize("curvature", [-1.0, 0.0, 1.0])
 def test_gu2019_loss_all_curvatures(curvature, synthetic_dataset):
     """Test Gu et al. (2019) loss works for all curvature types."""
-    distance_matrix = synthetic_dataset
+    X, _ = synthetic_dataset
     embed_dim = 2
 
     model = fit_embedding(
-        distance_matrix=distance_matrix,
+        data=X,
         embed_dim=embed_dim,
         curvature=curvature,
         init_scale=0.001,
@@ -314,12 +318,12 @@ def test_gu2019_loss_all_curvatures(curvature, synthetic_dataset):
 
 def test_invalid_loss_type(synthetic_dataset):
     """Test that invalid loss_type raises an error."""
-    distance_matrix = synthetic_dataset
+    X, _ = synthetic_dataset
     embed_dim = 2
 
     with pytest.raises(ValueError, match="Unknown loss_type"):
         fit_embedding(
-            distance_matrix=distance_matrix,
+            data=X,
             embed_dim=embed_dim,
             curvature=-1.0,
             init_scale=0.001,

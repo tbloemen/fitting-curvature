@@ -84,6 +84,29 @@ class Manifold(ABC):
         pass
 
     @abstractmethod
+    def pairwise_distances_batched(
+        self, points: Tensor, indices_i: Tensor, indices_j: Tensor
+    ) -> Tensor:
+        """
+        Compute distances for batched pairs on the manifold.
+
+        Parameters
+        ----------
+        points : Tensor
+            Points in ambient space, shape (n_points, ambient_dim)
+        indices_i : Tensor
+            First point indices, shape (batch_size,)
+        indices_j : Tensor
+            Second point indices, shape (batch_size,)
+
+        Returns
+        -------
+        Tensor
+            Distances for batched pairs, shape (batch_size,)
+        """
+        pass
+
+    @abstractmethod
     def project_to_tangent(self, points: Tensor, grad: Tensor) -> Tensor:
         """
         Project gradient to tangent space at points.
@@ -163,6 +186,25 @@ class Euclidean(Manifold):
         diff = points.unsqueeze(0) - points.unsqueeze(1)
         return torch.norm(diff, dim=2)
 
+    def pairwise_distances_batched(
+        self, points: Tensor, indices_i: Tensor, indices_j: Tensor
+    ) -> Tensor:
+        """
+        Compute Euclidean distances for batched pairs.
+
+        Parameters
+        ----------
+        points : Tensor, shape (n_points, embed_dim)
+        indices_i : Tensor, shape (batch_size,)
+        indices_j : Tensor, shape (batch_size,)
+
+        Returns
+        -------
+        Tensor, shape (batch_size,)
+        """
+        diff = points[indices_i] - points[indices_j]
+        return torch.norm(diff, dim=1)
+
     def project_to_tangent(self, points: Tensor, grad: Tensor) -> Tensor:
         """Tangent space is entire space, so projection is identity."""
         return grad
@@ -223,6 +265,33 @@ class Sphere(Manifold):
 
         # Compute dot products
         dots = torch.mm(points, points.t()) / radius_squared
+        # Clamp to avoid numerical issues with arccos
+        dots = torch.clamp(dots, -1.0 + 1e-7, 1.0 - 1e-7)
+        distances = radius * torch.acos(dots)
+
+        return distances
+
+    def pairwise_distances_batched(
+        self, points: Tensor, indices_i: Tensor, indices_j: Tensor
+    ) -> Tensor:
+        """
+        Compute spherical distances for batched pairs.
+
+        Parameters
+        ----------
+        points : Tensor, shape (n_points, embed_dim+1)
+        indices_i : Tensor, shape (batch_size,)
+        indices_j : Tensor, shape (batch_size,)
+
+        Returns
+        -------
+        Tensor, shape (batch_size,)
+        """
+        radius = self.radius
+        radius_squared = self.radius_squared
+
+        # Compute dot products for selected pairs
+        dots = (points[indices_i] * points[indices_j]).sum(dim=1) / radius_squared
         # Clamp to avoid numerical issues with arccos
         dots = torch.clamp(dots, -1.0 + 1e-7, 1.0 - 1e-7)
         distances = radius * torch.acos(dots)
@@ -336,6 +405,43 @@ class Hyperboloid(Manifold):
         distances = radius * torch.acosh(input_to_acosh)
 
         return distances
+
+    def pairwise_distances_batched(
+        self, points: Tensor, indices_i: Tensor, indices_j: Tensor
+    ) -> Tensor:
+        """
+        Compute hyperbolic distances for batched pairs using hyperboloid model.
+
+        Parameters
+        ----------
+        points : Tensor, shape (n_points, embed_dim+1)
+        indices_i : Tensor, shape (batch_size,)
+        indices_j : Tensor, shape (batch_size,)
+
+        Returns
+        -------
+        Tensor, shape (batch_size,)
+        """
+        radius = self.radius
+        radius_squared = self.radius_squared
+
+        # Lorentzian inner product with signature (-, +, +, ...)
+        time_i = points[indices_i, 0:1]
+        time_j = points[indices_j, 0:1]
+        spatial_i = points[indices_i, 1:]
+        spatial_j = points[indices_j, 1:]
+
+        lorentz_prod = -time_i * time_j + (spatial_i * spatial_j).sum(
+            dim=1, keepdim=True
+        )
+        lorentz_prod_normalized = lorentz_prod / radius_squared
+
+        # Add small epsilon to avoid infinite gradient at x=1
+        eps = 1e-7
+        input_to_acosh = torch.clamp(-lorentz_prod_normalized, min=1.0 + eps)
+        distances = radius * torch.acosh(input_to_acosh)
+
+        return distances.squeeze(1)
 
     def project_to_tangent(self, points: Tensor, grad: Tensor) -> Tensor:
         """

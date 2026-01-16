@@ -4,6 +4,12 @@ import numpy as np
 from sklearn.manifold import trustworthiness
 
 
+# Maximum number of samples before switching to sampling-based evaluation
+# For N samples, sklearn computes an N×N distance matrix
+# At 10k samples, this is 10k × 10k × 4 bytes = 400MB (manageable)
+MAX_SAMPLES_FOR_FULL_EVALUATION = 10000
+
+
 def continuity(
     high_dim: np.ndarray, low_dim: np.ndarray, n_neighbors: int = 5
 ) -> float:
@@ -34,10 +40,17 @@ def continuity(
 
 
 def evaluate_embedding(
-    high_dim: np.ndarray, low_dim: np.ndarray, n_neighbors: int = 5
+    high_dim: np.ndarray,
+    low_dim: np.ndarray,
+    n_neighbors: int = 5,
+    max_samples: int = MAX_SAMPLES_FOR_FULL_EVALUATION,
+    random_state: int = 42,
 ) -> Tuple[float, float]:
     """
     Evaluate embedding quality using trustworthiness and continuity metrics.
+
+    For large datasets (> max_samples), uses random sampling to estimate metrics
+    without computing the full N×N distance matrix.
 
     Parameters
     ----------
@@ -47,6 +60,10 @@ def evaluate_embedding(
         Low-dimensional embedding
     n_neighbors : int, default=5
         Number of neighbors to consider for metrics
+    max_samples : int, default=10000
+        Maximum samples before using sampling-based evaluation
+    random_state : int, default=42
+        Random seed for reproducible sampling
 
     Returns
     -------
@@ -55,6 +72,16 @@ def evaluate_embedding(
     continuity_score : float
         Continuity metric (0-1, higher is better)
     """
+    n_samples = high_dim.shape[0]
+
+    if n_samples > max_samples:
+        # Use sampling-based evaluation for large datasets
+        rng = np.random.default_rng(random_state)
+        indices = rng.choice(n_samples, size=max_samples, replace=False)
+        high_dim = high_dim[indices]
+        low_dim = low_dim[indices]
+        print(f"  (Using {max_samples} sampled points for metric evaluation)")
+
     trust_score = trustworthiness(high_dim, low_dim, n_neighbors=n_neighbors)
     cont_score = continuity(high_dim, low_dim, n_neighbors=n_neighbors)
 
