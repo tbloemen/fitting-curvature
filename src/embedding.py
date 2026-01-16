@@ -4,6 +4,7 @@ from torch import Tensor
 from tqdm import tqdm
 
 from src.manifolds import Euclidean, Hyperboloid, Manifold, Sphere
+from src.matrices import compute_euclidean_distances_batched
 from src.riemannian_optimizer import RiemannianSGD
 from src.samplers import create_sampler
 
@@ -173,7 +174,7 @@ class ConstantCurvatureEmbedding(nn.Module):
 
 
 def fit_embedding(
-    distance_matrix: Tensor,
+    data: Tensor,
     embed_dim: int,
     curvature: float,
     init_scale: float,
@@ -187,12 +188,16 @@ def fit_embedding(
     sampler_kwargs: dict | None = None,
 ) -> ConstantCurvatureEmbedding:
     """
-    Fit a constant curvature embedding to preserve given distances.
+    Fit a constant curvature embedding to preserve distances from raw data.
+
+    This function computes Euclidean distances on-the-fly during training,
+    avoiding the need to store an N×N distance matrix. This enables training
+    on very large datasets with O(N×D) memory instead of O(N²).
 
     Parameters
     ----------
-    distance_matrix : Tensor, shape (N, N)
-        Target pairwise distances to preserve
+    data : Tensor, shape (N, D)
+        Input data points in original space
     embed_dim : int
         Embedding dimensionality
     curvature : float
@@ -225,6 +230,7 @@ def fit_embedding(
     -----
     Always uses Riemannian SGD optimizer following Gu et al. (2019).
     Uses batched training with configurable pair sampling strategy.
+    Distances are computed on-the-fly from raw data to minimize memory usage.
 
     Loss functions:
     - 'gu2019': Relative distortion loss from Gu et al. (2019) Eq 2:
@@ -240,10 +246,10 @@ def fit_embedding(
     if verbose:
         print(f"Using device: {device}")
 
-    # Move distance matrix to device
-    distance_matrix = distance_matrix.to(device)
+    # Move data to device
+    data = data.to(device)
 
-    n_points = distance_matrix.shape[0]
+    n_points = data.shape[0]
 
     # Initialize model with data-driven scale on the specified device
     model = ConstantCurvatureEmbedding(
@@ -262,10 +268,10 @@ def fit_embedding(
         **sampler_kwargs,
     )
 
-    # Precompute sampler data structures (e.g., k-NN graph)
+    # Precompute sampler data structures (e.g., k-NN graph) from raw data
     if verbose:
         print(f"Initializing {sampler_type} sampler with batch_size={batch_size}...")
-    sampler.precompute(distance_matrix)
+    sampler.precompute(data)
 
     optimizer = RiemannianSGD(model.parameters(), lr=lr, curvature=curvature)
     if verbose:
@@ -284,8 +290,10 @@ def fit_embedding(
         # Sample pairs
         indices_i, indices_j = sampler.sample_pairs()
 
-        # Get target distances for sampled pairs
-        target_distances = distance_matrix[indices_i, indices_j]
+        # Compute target distances on-the-fly from raw data
+        target_distances = compute_euclidean_distances_batched(
+            data, indices_i, indices_j
+        )
 
         # Get embedded distances for sampled pairs
         embedded_distances = model.pairwise_distances_batched(indices_i, indices_j)

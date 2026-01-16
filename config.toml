@@ -5,7 +5,7 @@
 dataset = "mnist"
 
 # Number of samples to use (use -1 for all samples)
-n_samples = 1000
+n_samples = -1
 
 [embedding]
 # Embedding dimension
@@ -49,7 +49,7 @@ batch_size = 4096
 # - "knn": K-nearest neighbor sampling (preserves local structure)
 # - "stratified": Distance-stratified sampling (balances local/global)
 # - "negative": Contrastive sampling (positive k-NN + negative random pairs)
-sampler_type = "knn"
+sampler_type = "random"
 
 # Sampler-specific parameters
 [batching.sampler_params]

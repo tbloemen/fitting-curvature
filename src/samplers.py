@@ -6,6 +6,8 @@ from typing import Tuple
 import torch
 from torch import Tensor
 
+from src.matrices import compute_euclidean_distances_batched
+
 
 class PairSampler(ABC):
     """Abstract base class for pair sampling strategies."""
@@ -28,14 +30,14 @@ class PairSampler(ABC):
         self.device = device
 
     @abstractmethod
-    def precompute(self, distance_matrix: Tensor) -> None:
+    def precompute(self, data: Tensor) -> None:
         """
-        Precompute any necessary data structures.
+        Precompute any necessary data structures from raw data.
 
         Parameters
         ----------
-        distance_matrix : Tensor, shape (n_points, n_points)
-            Pairwise distance matrix for the dataset
+        data : Tensor, shape (n_points, D)
+            Raw data points (NOT distance matrix)
         """
         pass
 
@@ -61,7 +63,7 @@ class RandomSampler(PairSampler):
     Simple baseline that provides unbiased gradient estimates.
     """
 
-    def precompute(self, distance_matrix: Tensor) -> None:
+    def precompute(self, data: Tensor) -> None:
         """No precomputation needed for random sampling."""
         pass
 
@@ -125,24 +127,17 @@ class KNNSampler(PairSampler):
         self.k = k
         self.knn_indices = None
 
-    def precompute(self, distance_matrix: Tensor) -> None:
+    def precompute(self, data: Tensor) -> None:
         """
-        Precompute k-nearest neighbor graph.
+        Precompute k-nearest neighbor graph from raw data.
 
         Parameters
         ----------
-        distance_matrix : Tensor, shape (n_points, n_points)
-            Pairwise distances
+        data : Tensor, shape (n_points, D)
+            Raw data points
         """
-        # Create a copy to avoid modifying original
-        dist_no_diag = distance_matrix.clone()
-
-        # Set diagonal to infinity to exclude self-pairs
-        dist_no_diag.fill_diagonal_(float("inf"))
-
-        # Get k nearest neighbors for each point
-        # torch.topk with largest=False gives k smallest distances
-        _, self.knn_indices = torch.topk(dist_no_diag, k=self.k, dim=1, largest=False)
+        # Use chunked k-NN computation to avoid full distance matrix
+        self.knn_indices = _compute_knn_chunked(data, k=self.k)
 
     def sample_pairs(self) -> Tuple[Tensor, Tensor]:
         """
@@ -177,6 +172,9 @@ class StratifiedSampler(PairSampler):
 
     Groups pairs by distance percentiles and samples with bias toward closer pairs.
     Balances local and global structure preservation.
+
+    For memory efficiency with large datasets, this uses sampling-based estimation
+    of distance percentiles rather than computing all pairwise distances.
     """
 
     def __init__(
@@ -186,6 +184,7 @@ class StratifiedSampler(PairSampler):
         device: torch.device,
         n_bins: int = 10,
         close_weight: float = 3.0,
+        n_percentile_samples: int = 100000,
     ):
         """
         Initialize stratified sampler.
@@ -203,44 +202,52 @@ class StratifiedSampler(PairSampler):
         close_weight : float
             Relative weight for sampling from close-pair bins (default: 3.0)
             Higher values bias toward close pairs
+        n_percentile_samples : int
+            Number of pairs to sample for estimating percentiles (default: 100000)
         """
         super().__init__(n_points, batch_size, device)
         self.n_bins = n_bins
         self.close_weight = close_weight
-        self.distance_bins = None
+        self.n_percentile_samples = n_percentile_samples
+        self.bin_edges = None
         self.bin_probs = None
+        self._data = None  # Store reference to data for on-the-fly distance computation
 
-    def precompute(self, distance_matrix: Tensor) -> None:
+    def precompute(self, data: Tensor) -> None:
         """
-        Precompute distance bins and bin probabilities.
+        Precompute bin edges from sampled distances.
 
         Parameters
         ----------
-        distance_matrix : Tensor, shape (n_points, n_points)
-            Pairwise distances
+        data : Tensor, shape (n_points, D)
+            Raw data points
         """
-        # Extract upper triangular distances (avoid duplicates and diagonal)
-        triu_indices = torch.triu_indices(
-            self.n_points, self.n_points, offset=1, device=self.device
+        from src.matrices import compute_euclidean_distances_batched
+
+        self._data = data
+
+        # Sample random pairs to estimate distance percentiles
+        n_samples = min(
+            self.n_percentile_samples, self.n_points * (self.n_points - 1) // 2
         )
-        distances = distance_matrix[triu_indices[0], triu_indices[1]]
+
+        indices_i = torch.randint(0, self.n_points, (n_samples,), device=self.device)
+        indices_j = torch.randint(0, self.n_points, (n_samples,), device=self.device)
+
+        # Ensure i != j
+        mask = indices_i == indices_j
+        while mask.any():
+            indices_j[mask] = torch.randint(
+                0, self.n_points, (int(mask.sum()),), device=self.device
+            )
+            mask = indices_i == indices_j
+
+        # Compute distances for sampled pairs
+        distances = compute_euclidean_distances_batched(data, indices_i, indices_j)
 
         # Compute percentile-based bin edges
         percentiles = torch.linspace(0, 100, self.n_bins + 1, device=self.device)
-        bin_edges = torch.quantile(distances, percentiles / 100.0)
-
-        # Assign pairs to distance bins
-        self.distance_bins = []
-        for i in range(self.n_bins):
-            mask = (distances >= bin_edges[i]) & (distances < bin_edges[i + 1])
-            # Include upper edge in last bin
-            if i == self.n_bins - 1:
-                mask |= distances == bin_edges[i + 1]
-
-            # Store (i_indices, j_indices) for this bin
-            bin_i = triu_indices[0][mask]
-            bin_j = triu_indices[1][mask]
-            self.distance_bins.append((bin_i, bin_j))
+        self.bin_edges = torch.quantile(distances, percentiles / 100.0)
 
         # Create bin sampling probabilities: higher weight for close pairs
         weights = torch.linspace(
@@ -252,6 +259,8 @@ class StratifiedSampler(PairSampler):
         """
         Sample pairs with stratification by distance.
 
+        Uses rejection sampling to sample pairs that fall into each distance bin.
+
         Returns
         -------
         indices_i : Tensor, shape (batch_size,)
@@ -259,7 +268,8 @@ class StratifiedSampler(PairSampler):
         indices_j : Tensor, shape (batch_size,)
             Second point indices
         """
-        if self.distance_bins is None or self.bin_probs is None:
+
+        if self.bin_edges is None or self.bin_probs is None:
             raise RuntimeError("Must call precompute() before sampling")
 
         # Sample which bins to draw from
@@ -271,26 +281,87 @@ class StratifiedSampler(PairSampler):
         indices_i = torch.zeros(self.batch_size, dtype=torch.long, device=self.device)
         indices_j = torch.zeros(self.batch_size, dtype=torch.long, device=self.device)
 
-        # Sample from each selected bin
-        for bin_idx in range(self.n_bins):
-            mask = bin_indices == bin_idx
-            n_from_bin = mask.sum().item()
+        # Oversample random pairs and assign to bins
+        oversample_factor = 4  # Sample more pairs than needed
+        n_oversample = self.batch_size * oversample_factor
 
-            if n_from_bin == 0:
-                continue
+        cand_i = torch.randint(0, self.n_points, (n_oversample,), device=self.device)
+        cand_j = torch.randint(0, self.n_points, (n_oversample,), device=self.device)
 
-            bin_i, bin_j = self.distance_bins[bin_idx]
-            bin_size = len(bin_i)
-
-            if bin_size == 0:
-                continue
-
-            # Sample random pair indices from this bin
-            pair_indices = torch.randint(
-                0, bin_size, (int(n_from_bin),), device=self.device
+        # Ensure i != j
+        mask = cand_i == cand_j
+        while mask.any():
+            cand_j[mask] = torch.randint(
+                0, self.n_points, (int(mask.sum()),), device=self.device
             )
-            indices_i[mask] = bin_i[pair_indices]
-            indices_j[mask] = bin_j[pair_indices]
+            mask = cand_i == cand_j
+
+        # Compute distances for candidates
+        assert (
+            self._data is not None
+        ), "Data is not initialized in sampler, unable to calculate distances"
+        cand_distances = compute_euclidean_distances_batched(self._data, cand_i, cand_j)
+
+        # Assign candidates to bins
+        cand_bins = torch.zeros(n_oversample, dtype=torch.long, device=self.device)
+        for bin_idx in range(self.n_bins):
+            if bin_idx == self.n_bins - 1:
+                # Last bin includes upper edge
+                bin_mask = (cand_distances >= self.bin_edges[bin_idx]) & (
+                    cand_distances <= self.bin_edges[bin_idx + 1]
+                )
+            else:
+                bin_mask = (cand_distances >= self.bin_edges[bin_idx]) & (
+                    cand_distances < self.bin_edges[bin_idx + 1]
+                )
+            cand_bins[bin_mask] = bin_idx
+
+        # Fill output from each bin
+        filled = torch.zeros(self.batch_size, dtype=torch.bool, device=self.device)
+        for bin_idx in range(self.n_bins):
+            # Positions that need pairs from this bin
+            need_mask = (bin_indices == bin_idx) & ~filled
+            n_need = need_mask.sum().item()
+
+            if n_need == 0:
+                continue
+
+            # Candidates in this bin
+            have_mask = cand_bins == bin_idx
+            have_indices = torch.where(have_mask)[0]
+            n_have = len(have_indices)
+
+            if n_have == 0:
+                # Fall back to random sampling if no candidates in bin
+                indices_i[need_mask] = torch.randint(
+                    0, self.n_points, (int(n_need),), device=self.device
+                )
+                indices_j[need_mask] = torch.randint(
+                    0, self.n_points, (int(n_need),), device=self.device
+                )
+                continue
+
+            # Take min(n_need, n_have) from candidates
+            n_take = min(int(n_need), n_have)
+            take_idx = have_indices[:n_take]
+
+            # Find positions to fill
+            need_positions = torch.where(need_mask)[0][:n_take]
+
+            indices_i[need_positions] = cand_i[take_idx]
+            indices_j[need_positions] = cand_j[take_idx]
+            filled[need_positions] = True
+
+        # Fill any remaining with random pairs
+        unfilled = ~filled
+        if unfilled.any():
+            n_unfilled = unfilled.sum().item()
+            indices_i[unfilled] = torch.randint(
+                0, self.n_points, (int(n_unfilled),), device=self.device
+            )
+            indices_j[unfilled] = torch.randint(
+                0, self.n_points, (int(n_unfilled),), device=self.device
+            )
 
         return indices_i, indices_j
 
@@ -334,23 +405,17 @@ class NegativeSampler(PairSampler):
         self.positive_ratio = positive_ratio
         self.knn_indices = None
 
-    def precompute(self, distance_matrix: Tensor) -> None:
+    def precompute(self, data: Tensor) -> None:
         """
-        Precompute k-nearest neighbor graph.
+        Precompute k-nearest neighbor graph from raw data.
 
         Parameters
         ----------
-        distance_matrix : Tensor, shape (n_points, n_points)
-            Pairwise distances
+        data : Tensor, shape (n_points, D)
+            Raw data points
         """
-        # Create a copy to avoid modifying original
-        dist_no_diag = distance_matrix.clone()
-
-        # Set diagonal to infinity to exclude self-pairs
-        dist_no_diag.fill_diagonal_(float("inf"))
-
-        # Get k nearest neighbors for each point
-        _, self.knn_indices = torch.topk(dist_no_diag, k=self.k, dim=1, largest=False)
+        # Use chunked k-NN computation to avoid full distance matrix
+        self.knn_indices = _compute_knn_chunked(data, k=self.k)
 
     def sample_pairs(self) -> Tuple[Tensor, Tensor]:
         """
@@ -455,3 +520,57 @@ def create_sampler(
             f"Unknown sampler_type: {sampler_type}. "
             "Use 'random', 'knn', 'stratified', or 'negative'."
         )
+
+
+def _compute_knn_chunked(X: Tensor, k: int, chunk_size: int = 1000) -> Tensor:
+    """
+    Compute k-nearest neighbor indices using chunked computation.
+
+    This avoids storing the full N×N distance matrix by processing
+    the data in chunks.
+
+    Parameters
+    ----------
+    X : Tensor, shape (N, D)
+        Input data points
+    k : int
+        Number of nearest neighbors
+    chunk_size : int
+        Number of query points to process at once
+
+    Returns
+    -------
+    Tensor, shape (N, k)
+        Indices of k-nearest neighbors for each point
+    """
+    n_points = X.shape[0]
+    device = X.device
+
+    # Precompute squared norms for all points
+    squared_norms = (X**2).sum(dim=1)  # (N,)
+
+    # Initialize output tensor
+    knn_indices = torch.zeros((n_points, k), dtype=torch.long, device=device)
+
+    # Process in chunks
+    for start in range(0, n_points, chunk_size):
+        end = min(start + chunk_size, n_points)
+        chunk = X[start:end]  # (chunk_size, D)
+        chunk_norms = squared_norms[start:end]  # (chunk_size,)
+
+        # Compute squared distances from chunk to all points
+        # ||x - y||^2 = ||x||^2 + ||y||^2 - 2<x,y>
+        dot_products = torch.mm(chunk, X.t())  # (chunk_size, N)
+        squared_distances = (
+            chunk_norms.unsqueeze(1) + squared_norms.unsqueeze(0) - 2 * dot_products
+        )
+
+        # Set self-distances to infinity
+        for i, idx in enumerate(range(start, end)):
+            squared_distances[i, idx] = float("inf")
+
+        # Get k smallest (nearest neighbors)
+        _, indices = torch.topk(squared_distances, k=k, dim=1, largest=False)
+        knn_indices[start:end] = indices
+
+    return knn_indices

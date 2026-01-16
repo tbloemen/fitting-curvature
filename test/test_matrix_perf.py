@@ -4,8 +4,7 @@ import time
 
 import pytest
 import torch
-
-from src.matrices import calculate_distance_matrix
+from conftest import calculate_distance_matrix
 
 
 @pytest.mark.parametrize("n_points", [100, 500, 1000])
@@ -18,9 +17,9 @@ def test_distance_matrix_cpu_performance(n_points):
     elapsed = time.time() - start
 
     # Should be reasonably fast
-    assert elapsed < 0.1, (
-        f"Distance matrix calculation too slow for {n_points} points: {elapsed:.4f}s"
-    )
+    assert (
+        elapsed < 0.1
+    ), f"Distance matrix calculation too slow for {n_points} points: {elapsed:.4f}s"
 
     # Check output shape
     assert dist.shape == (n_points, n_points)
@@ -45,9 +44,9 @@ def test_distance_matrix_gpu_performance(n_points):
     elapsed = time.time() - start
 
     # GPU should be very fast
-    assert elapsed < 0.01, (
-        f"GPU distance matrix calculation too slow for {n_points} points: {elapsed:.4f}s"
-    )
+    assert (
+        elapsed < 0.01
+    ), f"GPU distance matrix calculation too slow for {n_points} points: {elapsed:.4f}s"
 
     # Check output shape and device
     assert dist.shape == (n_points, n_points)
@@ -95,20 +94,20 @@ def test_distance_matrix_correctness():
     dist = calculate_distance_matrix(X)
 
     # Check known distances
-    assert torch.allclose(dist[0, 1], torch.tensor(1.0), atol=1e-5), (
-        "Distance (0,0) to (1,0) should be 1"
-    )
-    assert torch.allclose(dist[0, 2], torch.tensor(1.0), atol=1e-5), (
-        "Distance (0,0) to (0,1) should be 1"
-    )
-    assert torch.allclose(dist[1, 2], torch.sqrt(torch.tensor(2.0)), atol=1e-5), (
-        "Distance (1,0) to (0,1) should be sqrt(2)"
-    )
+    assert torch.allclose(
+        dist[0, 1], torch.tensor(1.0), atol=1e-5
+    ), "Distance (0,0) to (1,0) should be 1"
+    assert torch.allclose(
+        dist[0, 2], torch.tensor(1.0), atol=1e-5
+    ), "Distance (0,0) to (0,1) should be 1"
+    assert torch.allclose(
+        dist[1, 2], torch.sqrt(torch.tensor(2.0)), atol=1e-5
+    ), "Distance (1,0) to (0,1) should be sqrt(2)"
 
     # Check diagonal is zero
-    assert torch.allclose(torch.diag(dist), torch.zeros(3), atol=1e-6), (
-        "Diagonal should be zero"
-    )
+    assert torch.allclose(
+        torch.diag(dist), torch.zeros(3), atol=1e-6
+    ), "Diagonal should be zero"
 
 
 def test_distance_matrix_symmetric():
@@ -116,9 +115,9 @@ def test_distance_matrix_symmetric():
     X = torch.randn(50, 10)
     dist = calculate_distance_matrix(X)
 
-    assert torch.allclose(dist, dist.t(), atol=1e-5), (
-        "Distance matrix should be symmetric"
-    )
+    assert torch.allclose(
+        dist, dist.t(), atol=1e-5
+    ), "Distance matrix should be symmetric"
 
 
 def test_distance_matrix_non_negative():
@@ -143,9 +142,9 @@ def test_cpu_gpu_results_match():
 
     # Results should match within numerical precision
     max_diff = (dist_cpu - dist_gpu_cpu).abs().max().item()
-    assert max_diff < 0.1, (
-        f"CPU and GPU results differ too much: max diff = {max_diff:.2e}"
-    )
+    assert (
+        max_diff < 0.1
+    ), f"CPU and GPU results differ too much: max diff = {max_diff:.2e}"
 
 
 def test_distance_matrix_preserves_device():
@@ -166,6 +165,6 @@ def test_distance_matrix_dtype_preservation(dtype):
     X = torch.randn(20, 10, dtype=dtype)
     dist = calculate_distance_matrix(X)
 
-    assert dist.dtype == dtype, (
-        f"Output dtype {dist.dtype} should match input dtype {dtype}"
-    )
+    assert (
+        dist.dtype == dtype
+    ), f"Output dtype {dist.dtype} should match input dtype {dtype}"

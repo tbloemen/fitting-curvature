@@ -431,7 +431,9 @@ class Hyperboloid(Manifold):
         spatial_i = points[indices_i, 1:]
         spatial_j = points[indices_j, 1:]
 
-        lorentz_prod = -time_i * time_j + (spatial_i * spatial_j).sum(dim=1, keepdim=True)
+        lorentz_prod = -time_i * time_j + (spatial_i * spatial_j).sum(
+            dim=1, keepdim=True
+        )
         lorentz_prod_normalized = lorentz_prod / radius_squared
 
         # Add small epsilon to avoid infinite gradient at x=1

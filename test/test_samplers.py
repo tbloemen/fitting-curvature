@@ -1,16 +1,15 @@
-"""Tests for pair sampling strategies in batched training."""
+"""Tests for pair sampling strategies in batched training.
+
+Note: Samplers now take raw data instead of distance matrices.
+This allows for on-the-fly distance computation in large datasets.
+"""
 
 import pytest
 import torch
+from conftest import calculate_distance_matrix
 
-from src.matrices import calculate_distance_matrix
-from src.samplers import (
-    KNNSampler,
-    NegativeSampler,
-    RandomSampler,
-    StratifiedSampler,
-    create_sampler,
-)
+from src.samplers import (KNNSampler, NegativeSampler, RandomSampler,
+                          StratifiedSampler, create_sampler)
 
 
 @pytest.fixture
@@ -19,6 +18,7 @@ def sample_data():
     torch.manual_seed(42)
     n_points = 100
     X = torch.randn(n_points, 10)
+    # Keep distance_matrix for tests that verify KNN correctness
     distance_matrix = calculate_distance_matrix(X)
     return n_points, X, distance_matrix
 
@@ -57,11 +57,11 @@ class TestRandomSampler:
 
     def test_no_precompute_needed(self, sample_data):
         """Test RandomSampler doesn't need precompute."""
-        n_points, _, distance_matrix = sample_data
+        n_points, _, _ = sample_data
         batch_size = 32
         sampler = RandomSampler(n_points, batch_size, torch.device("cpu"))
         # Should work without calling precompute
-        indices_i, indices_j = sampler.sample_pairs()
+        indices_i, _ = sampler.sample_pairs()
         assert indices_i.shape == (batch_size,)
 
 
@@ -70,10 +70,10 @@ class TestKNNSampler:
 
     def test_output_shape(self, sample_data):
         """Test KNNSampler returns correct shape."""
-        n_points, _, distance_matrix = sample_data
+        n_points, X, _ = sample_data
         batch_size = 32
         sampler = KNNSampler(n_points, batch_size, torch.device("cpu"), k=5)
-        sampler.precompute(distance_matrix)
+        sampler.precompute(X)  # Now takes raw data
         indices_i, indices_j = sampler.sample_pairs()
 
         assert indices_i.shape == (batch_size,)
@@ -81,21 +81,23 @@ class TestKNNSampler:
 
     def test_knn_graph_shape(self, sample_data):
         """Test KNNSampler precomputes correct shape."""
-        n_points, _, distance_matrix = sample_data
+        n_points, X, _ = sample_data
         k = 10
         sampler = KNNSampler(n_points, 32, torch.device("cpu"), k=k)
-        sampler.precompute(distance_matrix)
+        sampler.precompute(X)
 
+        assert sampler.knn_indices is not None
         assert sampler.knn_indices.shape == (n_points, k)
 
     def test_knn_graph_correctness(self, sample_data):
         """Test KNNSampler precomputes correct k-NN graph."""
-        n_points, _, distance_matrix = sample_data
+        n_points, X, distance_matrix = sample_data
         k = 5
         sampler = KNNSampler(n_points, 32, torch.device("cpu"), k=k)
-        sampler.precompute(distance_matrix)
+        sampler.precompute(X)
+        assert sampler.knn_indices is not None
 
-        # Verify first point's k-NN
+        # Verify first point's k-NN against full distance matrix
         dist_no_diag = distance_matrix.clone()
         dist_no_diag.fill_diagonal_(float("inf"))
         true_knn = torch.argsort(dist_no_diag[0])[:k]
@@ -107,11 +109,12 @@ class TestKNNSampler:
 
     def test_samples_from_knn(self, sample_data):
         """Test KNNSampler samples only from k-NN."""
-        n_points, _, distance_matrix = sample_data
+        n_points, X, _ = sample_data
         k = 5
         batch_size = 100
         sampler = KNNSampler(n_points, batch_size, torch.device("cpu"), k=k)
-        sampler.precompute(distance_matrix)
+        sampler.precompute(X)
+        assert sampler.knn_indices is not None
 
         indices_i, indices_j = sampler.sample_pairs()
 
@@ -133,39 +136,39 @@ class TestStratifiedSampler:
 
     def test_output_shape(self, sample_data):
         """Test StratifiedSampler returns correct shape."""
-        n_points, _, distance_matrix = sample_data
+        n_points, X, _ = sample_data
         batch_size = 32
-        sampler = StratifiedSampler(
-            n_points, batch_size, torch.device("cpu"), n_bins=5
-        )
-        sampler.precompute(distance_matrix)
+        sampler = StratifiedSampler(n_points, batch_size, torch.device("cpu"), n_bins=5)
+        sampler.precompute(X)  # Now takes raw data
         indices_i, indices_j = sampler.sample_pairs()
 
         assert indices_i.shape == (batch_size,)
         assert indices_j.shape == (batch_size,)
 
     def test_bins_created(self, sample_data):
-        """Test StratifiedSampler creates correct number of bins."""
-        n_points, _, distance_matrix = sample_data
+        """Test StratifiedSampler creates bin edges and probabilities."""
+        n_points, X, _ = sample_data
         n_bins = 5
-        sampler = StratifiedSampler(
-            n_points, 32, torch.device("cpu"), n_bins=n_bins
-        )
-        sampler.precompute(distance_matrix)
+        sampler = StratifiedSampler(n_points, 32, torch.device("cpu"), n_bins=n_bins)
+        sampler.precompute(X)
+        assert sampler.bin_edges is not None
+        assert sampler.bin_probs is not None
 
-        assert len(sampler.distance_bins) == n_bins
+        # Check bin_edges has n_bins + 1 elements (fence posts)
+        assert sampler.bin_edges.shape == (n_bins + 1,)
         assert sampler.bin_probs.shape == (n_bins,)
         assert torch.allclose(sampler.bin_probs.sum(), torch.tensor(1.0))
 
     def test_bin_probabilities(self, sample_data):
         """Test bin probabilities are properly weighted."""
-        n_points, _, distance_matrix = sample_data
+        n_points, X, _ = sample_data
         n_bins = 5
         close_weight = 3.0
         sampler = StratifiedSampler(
             n_points, 32, torch.device("cpu"), n_bins=n_bins, close_weight=close_weight
         )
-        sampler.precompute(distance_matrix)
+        sampler.precompute(X)
+        assert sampler.bin_probs is not None
 
         # Verify probabilities are higher for close pairs (first bin)
         assert sampler.bin_probs[0] > sampler.bin_probs[-1]
@@ -184,12 +187,12 @@ class TestNegativeSampler:
 
     def test_output_shape(self, sample_data):
         """Test NegativeSampler returns correct shape."""
-        n_points, _, distance_matrix = sample_data
+        n_points, X, _ = sample_data
         batch_size = 100
         sampler = NegativeSampler(
             n_points, batch_size, torch.device("cpu"), k=5, positive_ratio=0.7
         )
-        sampler.precompute(distance_matrix)
+        sampler.precompute(X)  # Now takes raw data
         indices_i, indices_j = sampler.sample_pairs()
 
         assert indices_i.shape == (batch_size,)
@@ -197,7 +200,7 @@ class TestNegativeSampler:
 
     def test_positive_ratio(self, sample_data):
         """Test NegativeSampler respects positive/negative ratio."""
-        n_points, _, distance_matrix = sample_data
+        n_points, X, _ = sample_data
         k = 5
         batch_size = 1000
         positive_ratio = 0.7
@@ -208,7 +211,8 @@ class TestNegativeSampler:
             k=k,
             positive_ratio=positive_ratio,
         )
-        sampler.precompute(distance_matrix)
+        sampler.precompute(X)
+        assert sampler.knn_indices is not None
 
         indices_i, indices_j = sampler.sample_pairs()
 
@@ -224,7 +228,7 @@ class TestNegativeSampler:
 
     def test_no_self_pairs_negative(self, sample_data):
         """Test NegativeSampler doesn't sample self-pairs in negative samples."""
-        n_points, _, distance_matrix = sample_data
+        n_points, X, _ = sample_data
         batch_size = 1000
         sampler = NegativeSampler(
             n_points,
@@ -233,7 +237,7 @@ class TestNegativeSampler:
             k=5,
             positive_ratio=0.3,  # More negative pairs
         )
-        sampler.precompute(distance_matrix)
+        sampler.precompute(X)
 
         indices_i, indices_j = sampler.sample_pairs()
         assert (indices_i != indices_j).all()
@@ -279,6 +283,7 @@ class TestCreateSampler:
         n_points, _, _ = sample_data
         k = 20
         sampler = create_sampler("knn", n_points, 32, torch.device("cpu"), k=k)
+        assert isinstance(sampler, KNNSampler)
         assert sampler.k == k
 
     def test_invalid_sampler_type(self, sample_data):
@@ -296,14 +301,13 @@ class TestSamplerConsistency:
         torch.manual_seed(42)
         n_points = 50
         X = torch.randn(n_points, 10)
-        distance_matrix = calculate_distance_matrix(X)
 
         sampler_types = ["random", "knn", "stratified", "negative"]
         device = torch.device("cpu")
 
         for sampler_type in sampler_types:
             sampler = create_sampler(sampler_type, n_points, 128, device)
-            sampler.precompute(distance_matrix)
+            sampler.precompute(X)  # Now takes raw data
 
             # Sample a few batches without error
             for _ in range(10):
@@ -318,8 +322,6 @@ class TestSamplerConsistency:
 
         torch.manual_seed(42)
         n_points = 50
-        X = torch.randn(n_points, 10, device="cuda")
-        distance_matrix = calculate_distance_matrix(X)
 
         sampler = RandomSampler(n_points, 32, torch.device("cuda"))
         indices_i, indices_j = sampler.sample_pairs()
