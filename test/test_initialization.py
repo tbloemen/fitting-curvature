@@ -156,7 +156,7 @@ def test_pca_requires_data():
     init_scale = 0.01
     device = torch.device("cpu")
 
-    with pytest.raises(ValueError, match="PCA initialization requires data"):
+    with pytest.raises(ValueError, match="Data needs to be supplied for PCA"):
         ConstantCurvatureEmbedding(
             n_points=n_points,
             embed_dim=embed_dim,
