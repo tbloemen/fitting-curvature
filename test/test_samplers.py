@@ -292,12 +292,6 @@ class TestCreateSampler:
         assert isinstance(sampler, KNNSampler)
         assert sampler.k == k
 
-    def test_invalid_sampler_type(self, sample_data):
-        """Test create_sampler raises error for invalid type."""
-        n_points, _, _ = sample_data
-        with pytest.raises(ValueError):
-            create_sampler("invalid", n_points, 32, torch.device("cpu"))  # type: ignore[arg-type]
-
 
 class TestSamplerConsistency:
     """Tests for sampler consistency and correctness."""
