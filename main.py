@@ -2,11 +2,12 @@ import tomllib
 
 import torch
 
-from src.embedding import InitMethod, LossType, fit_embedding
+from src.embedding import fit_embedding
 from src.load_data import load_raw_data
 from src.matrices import get_default_init_scale, normalize_data
 from src.metrics import evaluate_embedding
 from src.samplers import SamplerType
+from src.types import InitMethod, LossType
 from src.visualisation import default_plot, project_to_2d
 
 

@@ -15,7 +15,47 @@ from abc import ABC, abstractmethod
 import torch
 from torch import Tensor
 
-from embedding import InitMethod
+from src.types import InitMethod
+
+
+def _pca_init(data: Tensor, n_components: int, device: torch.device) -> Tensor:
+    """
+    Initialize points using PCA.
+
+    Performs PCA on high-dimensional data and returns scaled coordinates
+    suitable for manifold initialization.
+
+    Parameters
+    ----------
+    data : Tensor
+        High-dimensional data, shape (n_points, n_features)
+    n_components : int
+        Number of principal components to keep (embedding dimension)
+    device : torch.device
+        Target device for the output tensor
+
+    Returns
+    -------
+    Tensor
+        PCA-initialized points, shape (n_points, n_components)
+        Rescaled by dividing by std(first_component) * 10000 to avoid convergence issues
+    """
+
+    # Center the data
+    data_centered = data - data.mean(dim=0, keepdim=True)
+
+    # Compute SVD
+    U, S, _ = torch.linalg.svd(data_centered, full_matrices=False)
+
+    # Project data onto first n_components principal components
+    X_pca = U[:, :n_components] @ torch.diag(S[:n_components])
+
+    # Rescale to avoid convergence issues
+    # Divide by std of first component * 10000
+    scale_factor = X_pca[:, 0].std() * 10000
+    X_pca = X_pca / scale_factor
+
+    return X_pca.to(device)
 
 
 class Manifold(ABC):
@@ -210,19 +250,8 @@ class Euclidean(Manifold):
             return torch.randn(n_points, embed_dim, device=device) * init_scale
         elif init_method == InitMethod.PCA:
             if data is None:
-                raise ValueError("PCA initialization requires data to be provided")
-            # Use PyTorch's PCA via SVD
-            # Center the data
-            data_centered = data - data.mean(dim=0, keepdim=True)
-            # Compute SVD
-            U, S, _ = torch.linalg.svd(data_centered, full_matrices=False)
-            # Project data onto first embed_dim components
-            X_pca = U[:, :embed_dim] @ torch.diag(S[:embed_dim])
-            # Rescale to avoid convergence issues (following the snippet)
-            # Divide by std of first component * 10000
-            scale_factor = X_pca[:, 0].std() * 10000
-            X_pca = X_pca / scale_factor
-            return X_pca.to(device)
+                raise ValueError("Data needs to be supplied for PCA")
+            return _pca_init(data, embed_dim, device)
 
     def pairwise_distances(self, points: Tensor) -> Tensor:
         """Compute Euclidean distances."""
@@ -293,8 +322,8 @@ class Sphere(Manifold):
 
         Parameters
         ----------
-        init_method : str
-            "random" for random initialization, "pca" for PCA-based initialization
+        init_method : InitMethod
+            InitMethod.RANDOM for random initialization, InitMethod.PCA for PCA-based initialization
         data : Tensor, optional
             High-dimensional data for PCA initialization
         """
@@ -302,15 +331,10 @@ class Sphere(Manifold):
             # Initialize random spatial coordinates
             spatial_init = torch.randn(n_points, embed_dim, device=device) * init_scale
         elif init_method == InitMethod.PCA:
-            if data is None:
-                raise ValueError("PCA initialization requires data to be provided")
             # Use PCA to get spatial coordinates
-            data_centered = data - data.mean(dim=0, keepdim=True)
-            U, S, _ = torch.linalg.svd(data_centered, full_matrices=False)
-            X_pca = U[:, :embed_dim] @ torch.diag(S[:embed_dim])
-            # Rescale to avoid convergence issues
-            scale_factor = X_pca[:, 0].std() * 10000
-            spatial_init = (X_pca / scale_factor).to(device)
+            if data is None:
+                raise ValueError("Data needs to be supplied for PCA")
+            spatial_init = _pca_init(data, embed_dim, device)
 
         # Project to sphere by computing x0 from constraint
         radius_squared = self.radius_squared
@@ -444,8 +468,8 @@ class Hyperboloid(Manifold):
 
         Parameters
         ----------
-        init_method : str
-            "random" for random initialization, "pca" for PCA-based initialization
+        init_method : InitMethod
+            InitMethod.RANDOM for random initialization, InitMethod.PCA for PCA-based initialization
         data : Tensor, optional
             High-dimensional data for PCA initialization
         """
@@ -453,15 +477,10 @@ class Hyperboloid(Manifold):
             # Initialize random spatial coordinates
             spatial_init = torch.randn(n_points, embed_dim, device=device) * init_scale
         elif init_method == InitMethod.PCA:
-            if data is None:
-                raise ValueError("PCA initialization requires data to be provided")
             # Use PCA to get spatial coordinates
-            data_centered = data - data.mean(dim=0, keepdim=True)
-            U, S, _ = torch.linalg.svd(data_centered, full_matrices=False)
-            X_pca = U[:, :embed_dim] @ torch.diag(S[:embed_dim])
-            # Rescale to avoid convergence issues
-            scale_factor = X_pca[:, 0].std() * 10000
-            spatial_init = (X_pca / scale_factor).to(device)
+            if data is None:
+                raise ValueError("Data needs to be supplied for PCA")
+            spatial_init = _pca_init(data, embed_dim, device)
 
         # Project to hyperboloid by computing x0 from constraint
         radius_squared = self.radius_squared

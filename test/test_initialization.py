@@ -3,7 +3,8 @@
 import pytest
 import torch
 
-from src.embedding import ConstantCurvatureEmbedding, InitMethod
+from src.embedding import ConstantCurvatureEmbedding
+from src.types import InitMethod
 
 
 def test_random_initialization_euclidean():

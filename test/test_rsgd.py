@@ -13,7 +13,8 @@ import pytest
 import torch
 from conftest import calculate_distance_matrix, compute_loss
 
-from src.embedding import LossType, fit_embedding
+from src.embedding import fit_embedding
+from src.types import LossType
 
 
 @pytest.fixture

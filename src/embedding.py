@@ -1,5 +1,3 @@
-from enum import Enum
-
 import torch
 import torch.nn as nn
 from torch import Tensor
@@ -9,20 +7,7 @@ from src.manifolds import Euclidean, Hyperboloid, Manifold, Sphere
 from src.matrices import compute_euclidean_distances_batched
 from src.riemannian_optimizer import RiemannianSGD
 from src.samplers import SamplerType, create_sampler
-
-
-class LossType(Enum):
-    """Loss function types for embedding optimization."""
-
-    GU2019 = "gu2019"  # Relative distortion loss from Gu et al. (2019)
-    MSE = "mse"  # Mean squared error (stress function)
-
-
-class InitMethod(Enum):
-    """Initialization methods for embedding."""
-
-    RANDOM = "random"  # Random initialization
-    PCA = "pca"  # PCA-based initialization
+from src.types import InitMethod, LossType
 
 
 def compute_loss_batched(
