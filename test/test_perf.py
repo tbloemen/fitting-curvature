@@ -14,10 +14,13 @@ def perf_model():
     n_points = 100
     embed_dim = 10
     curvature = -1.0
-    return ConstantCurvatureEmbedding(n_points, embed_dim, curvature, init_scale=0.1)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    return ConstantCurvatureEmbedding(
+        n_points, embed_dim, curvature, device=device, init_scale=0.1
+    )
 
 
-def test_forward_pass_performance(perf_model ):
+def test_forward_pass_performance(perf_model):
     """Test forward pass performance."""
     # Warm up
     for _ in range(10):
@@ -34,9 +37,9 @@ def test_forward_pass_performance(perf_model ):
     per_iteration = elapsed_ms / n_iterations
 
     # Performance assertions
-    assert per_iteration < 10.0, (
-        f"Forward pass too slow: {per_iteration:.4f}ms per iteration"
-    )
+    assert (
+        per_iteration < 10.0
+    ), f"Forward pass too slow: {per_iteration:.4f}ms per iteration"
 
     # Log performance metrics
     print("\nForward pass performance:")
@@ -54,12 +57,12 @@ def test_gpu_performance_faster_than_cpu():
 
     # CPU model
     model_cpu = ConstantCurvatureEmbedding(
-        n_points, embed_dim, curvature, init_scale=0.1, device="cpu"
+        n_points, embed_dim, curvature, init_scale=0.1, device=torch.device("cpu")
     )
 
     # GPU model
     model_gpu = ConstantCurvatureEmbedding(
-        n_points, embed_dim, curvature, init_scale=0.1, device="cuda"
+        n_points, embed_dim, curvature, init_scale=0.1, device=torch.device("cuda")
     )
 
     # Warm up
@@ -89,9 +92,9 @@ def test_gpu_performance_faster_than_cpu():
     print(f"  Speedup: {speedup:.2f}x")
 
     # GPU should be at least a bit faster (allowing for small models where overhead dominates)
-    assert gpu_time < cpu_time, (
-        f"GPU ({gpu_time:.4f}s) should be faster than CPU ({cpu_time:.4f}s)"
-    )
+    assert (
+        gpu_time < cpu_time
+    ), f"GPU ({gpu_time:.4f}s) should be faster than CPU ({cpu_time:.4f}s)"
 
 
 @pytest.mark.parametrize(
@@ -104,7 +107,10 @@ def test_gpu_performance_faster_than_cpu():
 )
 def test_performance_scales_reasonably(n_points, embed_dim):
     """Test that performance scales reasonably with size."""
-    model = ConstantCurvatureEmbedding(n_points, embed_dim, -1.0, init_scale=0.1)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = ConstantCurvatureEmbedding(
+        n_points, embed_dim, -1.0, device=device, init_scale=0.1
+    )
 
     # Warm up
     for _ in range(5):
@@ -116,9 +122,9 @@ def test_performance_scales_reasonably(n_points, embed_dim):
     elapsed = time.time() - start
 
     # Should complete in reasonable time (< 1 second for these sizes)
-    assert elapsed < 1.0, (
-        f"Forward pass too slow for {n_points} points, {embed_dim}D: {elapsed:.4f}s"
-    )
+    assert (
+        elapsed < 1.0
+    ), f"Forward pass too slow for {n_points} points, {embed_dim}D: {elapsed:.4f}s"
 
     print(f"\n{n_points} points, {embed_dim}D: {elapsed * 1000:.2f}ms")
 
@@ -128,7 +134,9 @@ def test_no_memory_leak():
     """Test that repeated forward passes don't leak memory."""
     import gc
 
-    model = ConstantCurvatureEmbedding(100, 10, -1.0, init_scale=0.1, device="cuda")
+    model = ConstantCurvatureEmbedding(
+        100, 10, -1.0, init_scale=0.1, device=torch.device("cuda")
+    )
 
     # Get initial memory
     gc.collect()
@@ -147,6 +155,6 @@ def test_no_memory_leak():
     mem_growth = final_mem - initial_mem
 
     # Allow some growth but not excessive
-    assert mem_growth < 10 * 1024 * 1024, (
-        f"Memory leaked: {mem_growth / 1024 / 1024:.2f}MB"
-    )
+    assert (
+        mem_growth < 10 * 1024 * 1024
+    ), f"Memory leaked: {mem_growth / 1024 / 1024:.2f}MB"
