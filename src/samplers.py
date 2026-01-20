@@ -1,12 +1,22 @@
 """Pair sampling strategies for batched training on large datasets."""
 
 from abc import ABC, abstractmethod
+from enum import Enum
 from typing import Tuple
 
 import torch
 from torch import Tensor
 
 from src.matrices import compute_euclidean_distances_batched
+
+
+class SamplerType(Enum):
+    """Pair sampling strategy types for batched training."""
+
+    RANDOM = "random"  # Uniformly random pair sampling
+    KNN = "knn"  # K-nearest neighbor pair sampling
+    STRATIFIED = "stratified"  # Distance-stratified pair sampling
+    NEGATIVE = "negative"  # Contrastive pair sampling with positive and negative pairs
 
 
 class PairSampler(ABC):
@@ -460,7 +470,7 @@ class NegativeSampler(PairSampler):
 
 
 def create_sampler(
-    sampler_type: str,
+    sampler_type: SamplerType,
     n_points: int,
     batch_size: int,
     device: torch.device,
@@ -471,8 +481,8 @@ def create_sampler(
 
     Parameters
     ----------
-    sampler_type : str
-        Type of sampler: 'random', 'knn', 'stratified', 'negative'
+    sampler_type : SamplerType
+        Type of sampler: RANDOM, KNN, STRATIFIED, NEGATIVE
     n_points : int
         Number of points in dataset
     batch_size : int
@@ -496,29 +506,22 @@ def create_sampler(
     ValueError
         If sampler_type is not recognized
     """
-    sampler_type = sampler_type.lower()
-
-    if sampler_type == "random":
+    if sampler_type == SamplerType.RANDOM:
         return RandomSampler(n_points, batch_size, device)
-    elif sampler_type == "knn":
+    elif sampler_type == SamplerType.KNN:
         k = kwargs.get("k", 15)
         return KNNSampler(n_points, batch_size, device, k=k)
-    elif sampler_type == "stratified":
+    elif sampler_type == SamplerType.STRATIFIED:
         n_bins = kwargs.get("n_bins", 10)
         close_weight = kwargs.get("close_weight", 3.0)
         return StratifiedSampler(
             n_points, batch_size, device, n_bins=n_bins, close_weight=close_weight
         )
-    elif sampler_type == "negative":
+    elif sampler_type == SamplerType.NEGATIVE:
         k = kwargs.get("k", 15)
         positive_ratio = kwargs.get("positive_ratio", 0.7)
         return NegativeSampler(
             n_points, batch_size, device, k=k, positive_ratio=positive_ratio
-        )
-    else:
-        raise ValueError(
-            f"Unknown sampler_type: {sampler_type}. "
-            "Use 'random', 'knn', 'stratified', or 'negative'."
         )
 
 

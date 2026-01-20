@@ -2,10 +2,11 @@ import tomllib
 
 import torch
 
-from src.embedding import fit_embedding
+from src.embedding import LossType, fit_embedding
 from src.load_data import load_raw_data
 from src.matrices import get_default_init_scale, normalize_data
 from src.metrics import evaluate_embedding
+from src.samplers import SamplerType
 from src.visualisation import default_plot, project_to_2d
 
 
@@ -55,7 +56,7 @@ def main():
 
     embed_dim = embedding_config["embed_dim"]
     n_iterations = embedding_config["n_iterations"]
-    loss_type = embedding_config["loss_type"]
+    loss_type = LossType(embedding_config["loss_type"])
 
     # Normalize data so mean pairwise distance = 1
     print("\nNormalizing data...")
@@ -76,14 +77,14 @@ def main():
 
     # Extract batching parameters
     batch_size = batching_config.get("batch_size", 4096)
-    sampler_type = batching_config.get("sampler_type", "random")
+    sampler_type = SamplerType(batching_config.get("sampler_type", "random"))
     sampler_params = batching_config.get("sampler_params", {})
 
     for k in curvatures:
         print(f"\n{'=' * 60}")
         print(f"Training embedding with curvature k = {k}")
-        print(f"Loss function: {loss_type}")
-        print(f"Batch size: {batch_size}, sampler: {sampler_type}")
+        print(f"Loss function: {loss_type.value}")
+        print(f"Batch size: {batch_size}, sampler: {sampler_type.value}")
         print(f"{'=' * 60}")
 
         # Get learning rate for this curvature

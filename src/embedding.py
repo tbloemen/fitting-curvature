@@ -1,3 +1,5 @@
+from enum import Enum
+
 import torch
 import torch.nn as nn
 from torch import Tensor
@@ -6,13 +8,20 @@ from tqdm import tqdm
 from src.manifolds import Euclidean, Hyperboloid, Manifold, Sphere
 from src.matrices import compute_euclidean_distances_batched
 from src.riemannian_optimizer import RiemannianSGD
-from src.samplers import create_sampler
+from src.samplers import SamplerType, create_sampler
+
+
+class LossType(Enum):
+    """Loss function types for embedding optimization."""
+
+    GU2019 = "gu2019"  # Relative distortion loss from Gu et al. (2019)
+    MSE = "mse"  # Mean squared error (stress function)
 
 
 def compute_loss_batched(
     embedded_distances: Tensor,
     target_distances: Tensor,
-    loss_type: str = "gu2019",
+    loss_type: LossType = LossType.GU2019,
 ) -> Tensor:
     """
     Compute loss function for batched pairs.
@@ -23,24 +32,22 @@ def compute_loss_batched(
         Pairwise distances in the embedded space for sampled pairs
     target_distances : Tensor, shape (batch_size,)
         Target pairwise distances for sampled pairs
-    loss_type : str
-        Type of loss function: 'gu2019' for relative distortion or 'mse' for mean squared error
+    loss_type : LossType
+        Type of loss function: GU2019 for relative distortion or MSE for mean squared error
 
     Returns
     -------
     Tensor
         Scalar loss value
     """
-    if loss_type == "gu2019":
+    if loss_type == LossType.GU2019:
         # Gu et al. (2019) relative distortion loss
         # L = sum((d_embedded / d_target - 1)^2)
         # Add small epsilon to avoid division by zero
         loss = torch.sum((embedded_distances / (target_distances + 1e-8) - 1) ** 2)
-    elif loss_type == "mse":
+    elif loss_type == LossType.MSE:
         # Mean squared error (stress function)
         loss = torch.sum((embedded_distances - target_distances) ** 2)
-    else:
-        raise ValueError(f"Unknown loss_type: {loss_type}. Use 'gu2019' or 'mse'")
 
     return loss
 
@@ -140,8 +147,8 @@ def fit_embedding(
     n_iterations: int = 1000,
     lr: float = 0.01,
     verbose: bool = True,
-    loss_type: str = "gu2019",
-    sampler_type: str = "random",
+    loss_type: LossType = LossType.GU2019,
+    sampler_type: SamplerType = SamplerType.RANDOM,
     batch_size: int = 4096,
     sampler_kwargs: dict | None = None,
 ) -> ConstantCurvatureEmbedding:
@@ -170,10 +177,10 @@ def fit_embedding(
         Print progress (default: True)
     device : torch.device
         Device to use for computation (defaults to CUDA if available, else CPU)
-    loss_type : str
-        Type of loss function: 'gu2019' for relative distortion (default) or 'mse' for mean squared error
-    sampler_type : str
-        Type of pair sampler: 'random', 'knn', 'stratified', 'negative' (default: 'random')
+    loss_type : LossType
+        Type of loss function: GU2019 for relative distortion (default) or MSE for mean squared error
+    sampler_type : SamplerType
+        Type of pair sampler: RANDOM, KNN, STRATIFIED, NEGATIVE (default: RANDOM)
     batch_size : int
         Number of pairs to sample per iteration (default: 4096)
     sampler_kwargs : dict, optional
@@ -191,9 +198,9 @@ def fit_embedding(
     Distances are computed on-the-fly from raw data to minimize memory usage.
 
     Loss functions:
-    - 'gu2019': Relative distortion loss from Gu et al. (2019) Eq 2:
-                L = sum((d_P(xi,xj)/d_G(Xi,Xj) - 1)^2) for sampled pairs
-    - 'mse': Mean squared error: L = sum((d_P(xi,xj) - d_G(Xi,Xj))^2) for sampled pairs
+    - GU2019: Relative distortion loss from Gu et al. (2019) Eq 2:
+              L = sum((d_P(xi,xj)/d_G(Xi,Xj) - 1)^2) for sampled pairs
+    - MSE: Mean squared error: L = sum((d_P(xi,xj) - d_G(Xi,Xj))^2) for sampled pairs
     """
 
     # Move data to device
@@ -220,7 +227,9 @@ def fit_embedding(
 
     # Precompute sampler data structures (e.g., k-NN graph) from raw data
     if verbose:
-        print(f"Initializing {sampler_type} sampler with batch_size={batch_size}...")
+        print(
+            f"Initializing {sampler_type.value} sampler with batch_size={batch_size}..."
+        )
     sampler.precompute(data)
 
     optimizer = RiemannianSGD(model.parameters(), lr=lr, curvature=curvature)
