@@ -60,19 +60,14 @@ class ConstantCurvatureEmbedding(nn.Module):
         n_points: int,
         embed_dim: int,
         curvature: float,
-        init_scale: float = 0.1,
-        device: torch.device | str | None = None,
+        init_scale: float,
+        device: torch.device,
     ):
         super().__init__()
         self.n_points = n_points
         self.embed_dim = embed_dim
         self.curvature = curvature
-
-        # Set device (defaults to CUDA if available, else CPU)
-        if device is None:
-            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        else:
-            self.device = torch.device(device)
+        self.device = device
 
         # Create appropriate manifold
         self.manifold = self._create_manifold(curvature)
@@ -141,10 +136,10 @@ def fit_embedding(
     embed_dim: int,
     curvature: float,
     init_scale: float,
+    device: torch.device,
     n_iterations: int = 1000,
     lr: float = 0.01,
     verbose: bool = True,
-    device: torch.device | str | None = None,
     loss_type: str = "gu2019",
     sampler_type: str = "random",
     batch_size: int = 4096,
@@ -173,7 +168,7 @@ def fit_embedding(
         Learning rate (for RSGD, typically use smaller values than Adam)
     verbose : bool
         Print progress (default: True)
-    device : torch.device, str, or None
+    device : torch.device
         Device to use for computation (defaults to CUDA if available, else CPU)
     loss_type : str
         Type of loss function: 'gu2019' for relative distortion (default) or 'mse' for mean squared error
@@ -200,14 +195,6 @@ def fit_embedding(
                 L = sum((d_P(xi,xj)/d_G(Xi,Xj) - 1)^2) for sampled pairs
     - 'mse': Mean squared error: L = sum((d_P(xi,xj) - d_G(Xi,Xj))^2) for sampled pairs
     """
-    # Set device (defaults to CUDA if available, else CPU)
-    if device is None:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    else:
-        device = torch.device(device)
-
-    if verbose:
-        print(f"Using device: {device}")
 
     # Move data to device
     data = data.to(device)
@@ -216,7 +203,7 @@ def fit_embedding(
 
     # Initialize model with data-driven scale on the specified device
     model = ConstantCurvatureEmbedding(
-        n_points, embed_dim, curvature, init_scale=init_scale, device=device
+        n_points, embed_dim, curvature, init_scale, device
     )
 
     # Create sampler

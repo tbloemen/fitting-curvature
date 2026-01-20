@@ -1,7 +1,8 @@
 """Test gradient flow for constant curvature embeddings."""
 
-import torch
 import pytest
+import torch
+
 from src.embedding import ConstantCurvatureEmbedding
 
 
@@ -11,7 +12,10 @@ def hyperbolic_model():
     n_points = 10
     embed_dim = 2
     curvature = -1.0
-    return ConstantCurvatureEmbedding(n_points, embed_dim, curvature, init_scale=0.1)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    return ConstantCurvatureEmbedding(
+        n_points, embed_dim, curvature, device=device, init_scale=0.1
+    )
 
 
 def test_hyperbolic_model_initialization(hyperbolic_model):
@@ -50,9 +54,9 @@ def test_gradient_flow_hyperbolic(hyperbolic_model):
     assert hyperbolic_model.points.grad is not None
     grad_norm = hyperbolic_model.points.grad.norm().item()
     assert grad_norm > 0, "Gradients should be non-zero"
-    assert not torch.isnan(hyperbolic_model.points.grad).any(), (
-        "Gradients should not contain NaN"
-    )
+    assert not torch.isnan(
+        hyperbolic_model.points.grad
+    ).any(), "Gradients should not contain NaN"
 
 
 def test_distances_non_negative(hyperbolic_model):
@@ -64,9 +68,9 @@ def test_distances_non_negative(hyperbolic_model):
 def test_distances_symmetric(hyperbolic_model):
     """Test that distance matrix is symmetric."""
     distances = hyperbolic_model()
-    assert torch.allclose(distances, distances.t(), atol=1e-5), (
-        "Distance matrix should be symmetric"
-    )
+    assert torch.allclose(
+        distances, distances.t(), atol=1e-5
+    ), "Distance matrix should be symmetric"
 
 
 @pytest.mark.parametrize("curvature", [-1.0, 0.0, 1.0])
@@ -74,7 +78,10 @@ def test_different_curvatures(curvature):
     """Test gradient flow works for all curvature types."""
     n_points = 5
     embed_dim = 2
-    model = ConstantCurvatureEmbedding(n_points, embed_dim, curvature, init_scale=0.1)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = ConstantCurvatureEmbedding(
+        n_points, embed_dim, curvature, device=device, init_scale=0.1
+    )
 
     # Forward pass
     distances = model()
@@ -95,7 +102,7 @@ def test_gradient_flow_on_gpu():
     embed_dim = 2
     curvature = -1.0
     model = ConstantCurvatureEmbedding(
-        n_points, embed_dim, curvature, init_scale=0.1, device="cuda"
+        n_points, embed_dim, curvature, init_scale=0.1, device=torch.device("cuda")
     )
 
     assert model.points.device.type == "cuda"

@@ -26,11 +26,13 @@ def test_integration_hyperbolic():
     X = _create_test_data(100)
     X = normalize_data(X, verbose=False)
     init_scale = get_default_init_scale(embed_dim=2)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Fit embedding in hyperbolic space
     model = fit_embedding(
         data=X,
         embed_dim=2,
+        device=device,
         curvature=-1.0,
         init_scale=init_scale,
         n_iterations=50,
@@ -58,11 +60,13 @@ def test_integration_euclidean():
     X = _create_test_data(100)
     X = normalize_data(X, verbose=False)
     init_scale = get_default_init_scale(embed_dim=2)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     model = fit_embedding(
         data=X,
         embed_dim=2,
         curvature=0.0,
+        device=device,
         init_scale=init_scale,
         n_iterations=50,
         lr=0.001,
@@ -85,10 +89,12 @@ def test_integration_spherical():
     X = _create_test_data(100)
     X = normalize_data(X, verbose=False)
     init_scale = get_default_init_scale(embed_dim=2)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     model = fit_embedding(
         data=X,
         embed_dim=2,
+        device=device,
         curvature=1.0,
         init_scale=init_scale,
         n_iterations=50,
@@ -112,10 +118,12 @@ def test_integration_mse_loss():
     X = _create_test_data(100)
     X = normalize_data(X, verbose=False)
     init_scale = get_default_init_scale(embed_dim=2)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     model = fit_embedding(
         data=X,
         embed_dim=2,
+        device=device,
         curvature=-1.0,
         init_scale=init_scale,
         n_iterations=50,
@@ -136,11 +144,13 @@ def test_integration_multiple_curvatures():
     X = _create_test_data(50)
     X = normalize_data(X, verbose=False)
     init_scale = get_default_init_scale(embed_dim=2)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     curvatures = [-1.0, 0.0, 1.0]
     for k in curvatures:
         model = fit_embedding(
             data=X,
+            device=device,
             embed_dim=2,
             curvature=k,
             init_scale=init_scale,
@@ -165,10 +175,12 @@ def test_batched_training_random_sampler():
     X = _create_test_data(200)
     X = normalize_data(X, verbose=False)
     init_scale = get_default_init_scale(embed_dim=2)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     model = fit_embedding(
         data=X,
         embed_dim=2,
+        device=device,
         curvature=-1.0,
         init_scale=init_scale,
         n_iterations=50,
@@ -189,10 +201,12 @@ def test_batched_training_knn_sampler():
     X = _create_test_data(200)
     X = normalize_data(X, verbose=False)
     init_scale = get_default_init_scale(embed_dim=2)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     model = fit_embedding(
         data=X,
         embed_dim=2,
+        device=device,
         curvature=0.0,
         init_scale=init_scale,
         n_iterations=50,
@@ -214,10 +228,12 @@ def test_batched_training_stratified_sampler():
     X = _create_test_data(150)
     X = normalize_data(X, verbose=False)
     init_scale = get_default_init_scale(embed_dim=2)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     model = fit_embedding(
         data=X,
         embed_dim=2,
+        device=device,
         curvature=1.0,
         init_scale=init_scale,
         n_iterations=40,
@@ -239,10 +255,12 @@ def test_batched_training_negative_sampler():
     X = _create_test_data(150)
     X = normalize_data(X, verbose=False)
     init_scale = get_default_init_scale(embed_dim=2)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     model = fit_embedding(
         data=X,
         embed_dim=2,
+        device=device,
         curvature=-1.0,
         init_scale=init_scale,
         n_iterations=40,
@@ -264,6 +282,7 @@ def test_batched_training_all_samplers():
     X = _create_test_data(100)
     X = normalize_data(X, verbose=False)
     init_scale = get_default_init_scale(embed_dim=2)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     sampler_types = ["random", "knn", "stratified", "negative"]
 
@@ -271,6 +290,7 @@ def test_batched_training_all_samplers():
         model = fit_embedding(
             data=X,
             embed_dim=2,
+            device=device,
             curvature=0.0,
             init_scale=init_scale,
             n_iterations=30,
@@ -290,11 +310,13 @@ def test_batched_training_large_dataset():
     X = _create_test_data(500)
     X = normalize_data(X, verbose=False)
     init_scale = get_default_init_scale(embed_dim=2)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Use smaller number of iterations for faster test
     model = fit_embedding(
         data=X,
         embed_dim=2,
+        device=device,
         curvature=-1.0,
         init_scale=init_scale,
         n_iterations=20,
@@ -315,11 +337,13 @@ def test_batched_vs_default_sampler_type():
     X = _create_test_data(100)
     X = normalize_data(X, verbose=False)
     init_scale = get_default_init_scale(embed_dim=2)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Use default sampler_type (should be "random")
     model = fit_embedding(
         data=X,
         embed_dim=2,
+        device=device,
         curvature=0.0,
         init_scale=init_scale,
         n_iterations=30,
@@ -339,10 +363,12 @@ def test_batched_training_mse_loss():
     X = _create_test_data(100)
     X = normalize_data(X, verbose=False)
     init_scale = get_default_init_scale(embed_dim=2)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     model = fit_embedding(
         data=X,
         embed_dim=2,
+        device=device,
         curvature=-1.0,
         init_scale=init_scale,
         n_iterations=30,
@@ -371,11 +397,13 @@ def test_very_large_dataset_70k():
     X = _create_test_data(n_samples, n_features)
     X = normalize_data(X, verbose=False)
     init_scale = get_default_init_scale(embed_dim=2)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Use random sampler for fastest test
     model = fit_embedding(
         data=X,
         embed_dim=2,
+        device=device,
         curvature=-1.0,
         init_scale=init_scale,
         n_iterations=10,  # Few iterations just to verify it works

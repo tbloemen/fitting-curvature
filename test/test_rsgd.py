@@ -32,10 +32,12 @@ def test_rsgd_basic_convergence(synthetic_dataset):
     """Test that RSGD optimizer converges without producing NaN values."""
     X, distance_matrix = synthetic_dataset
     embed_dim = 2
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     model = fit_embedding(
         data=X,  # Now takes raw data
         embed_dim=embed_dim,
+        device=device,
         curvature=-1.0,
         init_scale=0.001,  # Paper uses very small initialization
         n_iterations=50,
@@ -59,11 +61,13 @@ def test_rsgd_convergence_quality(synthetic_dataset):
     """Test RSGD convergence quality on different geometries."""
     X, distance_matrix = synthetic_dataset
     embed_dim = 2
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Test hyperbolic - use smaller lr for curved space
     model_hyp = fit_embedding(
         data=X,
         embed_dim=embed_dim,
+        device=device,
         curvature=-1.0,
         init_scale=0.001,
         n_iterations=100,
@@ -75,6 +79,7 @@ def test_rsgd_convergence_quality(synthetic_dataset):
     model_euc = fit_embedding(
         data=X,
         embed_dim=embed_dim,
+        device=device,
         curvature=0.0,
         init_scale=0.1,
         n_iterations=100,
@@ -86,6 +91,7 @@ def test_rsgd_convergence_quality(synthetic_dataset):
     model_sph = fit_embedding(
         data=X,
         embed_dim=embed_dim,
+        device=device,
         curvature=1.0,
         init_scale=0.001,
         n_iterations=100,
@@ -116,10 +122,12 @@ def test_rsgd_hyperboloid_constraint(synthetic_dataset):
     """Test that RSGD maintains the hyperboloid constraint."""
     X, _ = synthetic_dataset
     embed_dim = 2
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     model = fit_embedding(
         data=X,
         embed_dim=embed_dim,
+        device=device,
         curvature=-1.0,
         init_scale=0.001,
         n_iterations=50,
@@ -148,11 +156,13 @@ def test_rsgd_spherical_constraint():
     """Test that RSGD maintains the spherical constraint."""
     torch.manual_seed(42)
     X = torch.randn(20, 3)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # RSGD should work for spherical geometry
     model_spherical = fit_embedding(
         data=X,
         embed_dim=2,
+        device=device,
         curvature=1.0,
         init_scale=0.001,
         n_iterations=10,
@@ -176,10 +186,12 @@ def test_gu2019_loss_convergence(synthetic_dataset):
     """Test that Gu et al. (2019) loss function works correctly."""
     X, distance_matrix = synthetic_dataset
     embed_dim = 2
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     model = fit_embedding(
         data=X,
         embed_dim=embed_dim,
+        device=device,
         curvature=-1.0,
         init_scale=0.001,
         n_iterations=100,
@@ -207,9 +219,11 @@ def test_mse_loss_convergence(synthetic_dataset):
     """Test that MSE loss function still works correctly."""
     X, distance_matrix = synthetic_dataset
     embed_dim = 2
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     model = fit_embedding(
         data=X,
+        device=device,
         embed_dim=embed_dim,
         curvature=-1.0,
         init_scale=0.001,
@@ -235,11 +249,13 @@ def test_loss_type_comparison(synthetic_dataset):
     """Compare Gu et al. (2019) loss vs MSE loss."""
     X, distance_matrix = synthetic_dataset
     embed_dim = 2
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Fit with Gu et al. loss
     model_gu = fit_embedding(
         data=X,
         embed_dim=embed_dim,
+        device=device,
         curvature=-1.0,
         init_scale=0.001,
         n_iterations=100,
@@ -252,6 +268,7 @@ def test_loss_type_comparison(synthetic_dataset):
     model_mse = fit_embedding(
         data=X,
         embed_dim=embed_dim,
+        device=device,
         curvature=-1.0,
         init_scale=0.001,
         n_iterations=100,
@@ -285,9 +302,11 @@ def test_gu2019_loss_all_curvatures(curvature, synthetic_dataset):
     """Test Gu et al. (2019) loss works for all curvature types."""
     X, _ = synthetic_dataset
     embed_dim = 2
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     model = fit_embedding(
         data=X,
+        device=device,
         embed_dim=embed_dim,
         curvature=curvature,
         init_scale=0.001,
@@ -320,10 +339,12 @@ def test_invalid_loss_type(synthetic_dataset):
     """Test that invalid loss_type raises an error."""
     X, _ = synthetic_dataset
     embed_dim = 2
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     with pytest.raises(ValueError, match="Unknown loss_type"):
         fit_embedding(
             data=X,
+            device=device,
             embed_dim=embed_dim,
             curvature=-1.0,
             init_scale=0.001,

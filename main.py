@@ -100,6 +100,7 @@ def main():
             embed_dim=embed_dim,
             curvature=k,
             n_iterations=n_iterations,
+            device=device,
             lr=lr,
             verbose=True,
             init_scale=init_scale,
