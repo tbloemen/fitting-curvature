@@ -9,7 +9,7 @@ import torch
 from conftest import calculate_distance_matrix
 
 from src.samplers import (KNNSampler, NegativeSampler, RandomSampler,
-                          StratifiedSampler, create_sampler)
+                          SamplerType, StratifiedSampler, create_sampler)
 
 
 @pytest.fixture
@@ -257,40 +257,40 @@ class TestCreateSampler:
     def test_create_random(self, sample_data):
         """Test create_sampler creates RandomSampler."""
         n_points, _, _ = sample_data
-        sampler = create_sampler("random", n_points, 32, torch.device("cpu"))
+        sampler = create_sampler(SamplerType.RANDOM, n_points, 32, torch.device("cpu"))
         assert isinstance(sampler, RandomSampler)
 
     def test_create_knn(self, sample_data):
         """Test create_sampler creates KNNSampler."""
         n_points, _, _ = sample_data
-        sampler = create_sampler("knn", n_points, 32, torch.device("cpu"))
+        sampler = create_sampler(SamplerType.KNN, n_points, 32, torch.device("cpu"))
         assert isinstance(sampler, KNNSampler)
 
     def test_create_stratified(self, sample_data):
         """Test create_sampler creates StratifiedSampler."""
         n_points, _, _ = sample_data
-        sampler = create_sampler("stratified", n_points, 32, torch.device("cpu"))
+        sampler = create_sampler(
+            SamplerType.STRATIFIED, n_points, 32, torch.device("cpu")
+        )
         assert isinstance(sampler, StratifiedSampler)
 
     def test_create_negative(self, sample_data):
         """Test create_sampler creates NegativeSampler."""
         n_points, _, _ = sample_data
-        sampler = create_sampler("negative", n_points, 32, torch.device("cpu"))
+        sampler = create_sampler(
+            SamplerType.NEGATIVE, n_points, 32, torch.device("cpu")
+        )
         assert isinstance(sampler, NegativeSampler)
 
     def test_create_with_kwargs(self, sample_data):
         """Test create_sampler passes kwargs correctly."""
         n_points, _, _ = sample_data
         k = 20
-        sampler = create_sampler("knn", n_points, 32, torch.device("cpu"), k=k)
+        sampler = create_sampler(
+            SamplerType.KNN, n_points, 32, torch.device("cpu"), k=k
+        )
         assert isinstance(sampler, KNNSampler)
         assert sampler.k == k
-
-    def test_invalid_sampler_type(self, sample_data):
-        """Test create_sampler raises error for invalid type."""
-        n_points, _, _ = sample_data
-        with pytest.raises(ValueError):
-            create_sampler("invalid", n_points, 32, torch.device("cpu"))
 
 
 class TestSamplerConsistency:
@@ -302,7 +302,12 @@ class TestSamplerConsistency:
         n_points = 50
         X = torch.randn(n_points, 10)
 
-        sampler_types = ["random", "knn", "stratified", "negative"]
+        sampler_types = [
+            SamplerType.RANDOM,
+            SamplerType.KNN,
+            SamplerType.STRATIFIED,
+            SamplerType.NEGATIVE,
+        ]
         device = torch.device("cpu")
 
         for sampler_type in sampler_types:

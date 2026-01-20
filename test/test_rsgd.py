@@ -13,7 +13,7 @@ import pytest
 import torch
 from conftest import calculate_distance_matrix, compute_loss
 
-from src.embedding import fit_embedding
+from src.embedding import LossType, fit_embedding
 
 
 @pytest.fixture
@@ -197,7 +197,7 @@ def test_gu2019_loss_convergence(synthetic_dataset):
         n_iterations=100,
         lr=0.0001,
         verbose=False,
-        loss_type="gu2019",
+        loss_type=LossType.GU2019,
     )
 
     # Check that embeddings are valid (not NaN)
@@ -230,7 +230,7 @@ def test_mse_loss_convergence(synthetic_dataset):
         n_iterations=100,
         lr=0.0001,
         verbose=False,
-        loss_type="mse",
+        loss_type=LossType.MSE,
     )
 
     # Check that embeddings are valid (not NaN)
@@ -261,7 +261,7 @@ def test_loss_type_comparison(synthetic_dataset):
         n_iterations=100,
         lr=0.0001,
         verbose=False,
-        loss_type="gu2019",
+        loss_type=LossType.GU2019,
     )
 
     # Fit with MSE loss
@@ -274,7 +274,7 @@ def test_loss_type_comparison(synthetic_dataset):
         n_iterations=100,
         lr=0.0001,
         verbose=False,
-        loss_type="mse",
+        loss_type=LossType.MSE,
     )
 
     # Both should produce valid embeddings
@@ -313,7 +313,7 @@ def test_gu2019_loss_all_curvatures(curvature, synthetic_dataset):
         n_iterations=50,
         lr=0.0001,
         verbose=False,
-        loss_type="gu2019",
+        loss_type=LossType.GU2019,
     )
 
     # Check that embeddings are valid
@@ -333,26 +333,6 @@ def test_gu2019_loss_all_curvatures(curvature, synthetic_dataset):
         constraint = -(x0**2) + (spatial**2).sum(dim=1)
         expected = torch.ones_like(constraint) * (-1.0 / abs(curvature))
         assert torch.allclose(constraint, expected, atol=1e-5)
-
-
-def test_invalid_loss_type(synthetic_dataset):
-    """Test that invalid loss_type raises an error."""
-    X, _ = synthetic_dataset
-    embed_dim = 2
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    with pytest.raises(ValueError, match="Unknown loss_type"):
-        fit_embedding(
-            data=X,
-            device=device,
-            embed_dim=embed_dim,
-            curvature=-1.0,
-            init_scale=0.001,
-            n_iterations=10,
-            lr=0.0001,
-            verbose=False,
-            loss_type="invalid_loss",
-        )
 
 
 def test_compute_loss_function():

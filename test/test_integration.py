@@ -11,8 +11,9 @@ large datasets with O(N×D) memory instead of O(N²).
 
 import torch
 
-from src.embedding import fit_embedding
+from src.embedding import LossType, fit_embedding
 from src.matrices import get_default_init_scale, normalize_data
+from src.samplers import SamplerType
 
 
 def _create_test_data(n_samples: int = 100, n_features: int = 10) -> torch.Tensor:
@@ -38,7 +39,7 @@ def test_integration_hyperbolic():
         n_iterations=50,
         lr=0.0001,
         verbose=False,  # No progress bar
-        loss_type="gu2019",
+        loss_type=LossType.GU2019,
     )
 
     # Verify output
@@ -71,7 +72,7 @@ def test_integration_euclidean():
         n_iterations=50,
         lr=0.001,
         verbose=False,
-        loss_type="gu2019",
+        loss_type=LossType.GU2019,
     )
 
     embeddings = model.get_embeddings()
@@ -100,7 +101,7 @@ def test_integration_spherical():
         n_iterations=50,
         lr=0.0001,
         verbose=False,
-        loss_type="gu2019",
+        loss_type=LossType.GU2019,
     )
 
     embeddings = model.get_embeddings()
@@ -129,7 +130,7 @@ def test_integration_mse_loss():
         n_iterations=50,
         lr=0.0001,
         verbose=False,
-        loss_type="mse",
+        loss_type=LossType.MSE,
     )
 
     embeddings = model.get_embeddings()
@@ -157,7 +158,7 @@ def test_integration_multiple_curvatures():
             n_iterations=30,
             lr=0.0001,
             verbose=False,
-            loss_type="gu2019",
+            loss_type=LossType.GU2019,
         )
 
         embeddings = model.get_embeddings()
@@ -186,8 +187,8 @@ def test_batched_training_random_sampler():
         n_iterations=50,
         lr=0.0001,
         verbose=False,
-        loss_type="gu2019",
-        sampler_type="random",
+        loss_type=LossType.GU2019,
+        sampler_type=SamplerType.RANDOM,
         batch_size=512,
     )
 
@@ -212,8 +213,8 @@ def test_batched_training_knn_sampler():
         n_iterations=50,
         lr=0.001,
         verbose=False,
-        loss_type="gu2019",
-        sampler_type="knn",
+        loss_type=LossType.GU2019,
+        sampler_type=SamplerType.KNN,
         batch_size=256,
         sampler_kwargs={"k": 10},
     )
@@ -239,8 +240,8 @@ def test_batched_training_stratified_sampler():
         n_iterations=40,
         lr=0.0001,
         verbose=False,
-        loss_type="gu2019",
-        sampler_type="stratified",
+        loss_type=LossType.GU2019,
+        sampler_type=SamplerType.STRATIFIED,
         batch_size=256,
         sampler_kwargs={"n_bins": 5, "close_weight": 2.0},
     )
@@ -266,8 +267,8 @@ def test_batched_training_negative_sampler():
         n_iterations=40,
         lr=0.0001,
         verbose=False,
-        loss_type="gu2019",
-        sampler_type="negative",
+        loss_type=LossType.GU2019,
+        sampler_type=SamplerType.NEGATIVE,
         batch_size=256,
         sampler_kwargs={"k": 10, "positive_ratio": 0.7},
     )
@@ -284,7 +285,12 @@ def test_batched_training_all_samplers():
     init_scale = get_default_init_scale(embed_dim=2)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    sampler_types = ["random", "knn", "stratified", "negative"]
+    sampler_types = [
+        SamplerType.RANDOM,
+        SamplerType.KNN,
+        SamplerType.STRATIFIED,
+        SamplerType.NEGATIVE,
+    ]
 
     for sampler_type in sampler_types:
         model = fit_embedding(
@@ -296,7 +302,7 @@ def test_batched_training_all_samplers():
             n_iterations=30,
             lr=0.001,
             verbose=False,
-            loss_type="gu2019",
+            loss_type=LossType.GU2019,
             sampler_type=sampler_type,
             batch_size=128,
         )
@@ -322,8 +328,8 @@ def test_batched_training_large_dataset():
         n_iterations=20,
         lr=0.0001,
         verbose=False,
-        loss_type="gu2019",
-        sampler_type="knn",
+        loss_type=LossType.GU2019,
+        sampler_type=SamplerType.KNN,
         batch_size=1024,
     )
 
@@ -349,7 +355,7 @@ def test_batched_vs_default_sampler_type():
         n_iterations=30,
         lr=0.001,
         verbose=False,
-        loss_type="gu2019",
+        loss_type=LossType.GU2019,
         batch_size=256,
     )
 
@@ -374,8 +380,8 @@ def test_batched_training_mse_loss():
         n_iterations=30,
         lr=0.0001,
         verbose=False,
-        loss_type="mse",
-        sampler_type="knn",
+        loss_type=LossType.MSE,
+        sampler_type=SamplerType.KNN,
         batch_size=256,
     )
 
@@ -409,8 +415,8 @@ def test_very_large_dataset_70k():
         n_iterations=10,  # Few iterations just to verify it works
         lr=0.0001,
         verbose=False,
-        loss_type="gu2019",
-        sampler_type="random",
+        loss_type=LossType.GU2019,
+        sampler_type=SamplerType.RANDOM,
         batch_size=4096,
     )
 
