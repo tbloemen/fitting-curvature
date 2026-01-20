@@ -2,7 +2,7 @@ import tomllib
 
 import torch
 
-from src.embedding import LossType, fit_embedding
+from src.embedding import InitMethod, LossType, fit_embedding
 from src.load_data import load_raw_data
 from src.matrices import get_default_init_scale, normalize_data
 from src.metrics import evaluate_embedding
@@ -57,6 +57,7 @@ def main():
     embed_dim = embedding_config["embed_dim"]
     n_iterations = embedding_config["n_iterations"]
     loss_type = LossType(embedding_config["loss_type"])
+    init_method = InitMethod(embedding_config.get("init_method", "random"))
 
     # Normalize data so mean pairwise distance = 1
     print("\nNormalizing data...")
@@ -84,6 +85,7 @@ def main():
         print(f"\n{'=' * 60}")
         print(f"Training embedding with curvature k = {k}")
         print(f"Loss function: {loss_type.value}")
+        print(f"Initialization method: {init_method.value}")
         print(f"Batch size: {batch_size}, sampler: {sampler_type.value}")
         print(f"{'=' * 60}")
 
@@ -109,6 +111,7 @@ def main():
             sampler_type=sampler_type,
             batch_size=batch_size,
             sampler_kwargs=sampler_params,
+            init_method=init_method,
         )
 
         # Get the learned embeddings (move to CPU for visualization)

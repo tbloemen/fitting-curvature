@@ -18,6 +18,13 @@ class LossType(Enum):
     MSE = "mse"  # Mean squared error (stress function)
 
 
+class InitMethod(Enum):
+    """Initialization methods for embedding."""
+
+    RANDOM = "random"  # Random initialization
+    PCA = "pca"  # PCA-based initialization
+
+
 def compute_loss_batched(
     embedded_distances: Tensor,
     target_distances: Tensor,
@@ -69,6 +76,8 @@ class ConstantCurvatureEmbedding(nn.Module):
         curvature: float,
         init_scale: float,
         device: torch.device,
+        init_method: InitMethod = InitMethod.RANDOM,
+        data: Tensor | None = None,
     ):
         super().__init__()
         self.n_points = n_points
@@ -81,7 +90,7 @@ class ConstantCurvatureEmbedding(nn.Module):
 
         # Initialize points on manifold
         points_init = self.manifold.init_points(
-            n_points, embed_dim, init_scale, self.device
+            n_points, embed_dim, init_scale, self.device, init_method, data
         )
         self.points = nn.Parameter(points_init)
 
@@ -151,6 +160,7 @@ def fit_embedding(
     sampler_type: SamplerType = SamplerType.RANDOM,
     batch_size: int = 4096,
     sampler_kwargs: dict | None = None,
+    init_method: InitMethod = InitMethod.RANDOM,
 ) -> ConstantCurvatureEmbedding:
     """
     Fit a constant curvature embedding to preserve distances from raw data.
@@ -185,6 +195,8 @@ def fit_embedding(
         Number of pairs to sample per iteration (default: 4096)
     sampler_kwargs : dict, optional
         Additional arguments for sampler (e.g., {'k': 15} for KNN)
+    init_method : InitMethod
+        Initialization method: RANDOM (default) or PCA
 
     Returns
     -------
@@ -210,7 +222,7 @@ def fit_embedding(
 
     # Initialize model with data-driven scale on the specified device
     model = ConstantCurvatureEmbedding(
-        n_points, embed_dim, curvature, init_scale, device
+        n_points, embed_dim, curvature, init_scale, device, init_method, data
     )
 
     # Create sampler
