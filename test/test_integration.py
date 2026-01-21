@@ -11,9 +11,10 @@ large datasets with O(N×D) memory instead of O(N²).
 
 import torch
 
-from src.embedding import LossType, fit_embedding
+from src.embedding import fit_embedding
 from src.matrices import get_default_init_scale, normalize_data
 from src.samplers import SamplerType
+from src.types import LossType
 
 
 def _create_test_data(n_samples: int = 100, n_features: int = 10) -> torch.Tensor:

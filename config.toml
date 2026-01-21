@@ -17,6 +17,9 @@ n_iterations = 50000
 # Loss function: "gu2019" for relative distortion or "mse" for mean squared error
 loss_type = "gu2019"
 
+# Initialization method: "random" for random initialization or "pca" for PCA-based initialization
+init_method = "random"
+
 [hyperparameters]
 # Learning rates for different curvatures
 # k > 0: spherical, k = 0: Euclidean, k < 0: hyperbolic
