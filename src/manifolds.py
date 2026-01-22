@@ -591,10 +591,21 @@ class Hyperboloid(Manifold):
         v_lorentz_sq = torch.clamp(v_lorentz_sq, min=1e-15)
         v_norm = torch.sqrt(v_lorentz_sq)
 
+        # Clip the norm to prevent numerical overflow in cosh/sinh
+        # When v_norm/radius becomes large (>10), cosh and sinh explode
+        max_norm = 10.0 * radius
+        scale_factor = torch.where(
+            v_norm > max_norm,
+            max_norm / v_norm,
+            torch.ones_like(v_norm)
+        )
+        tangent_vec_clipped = tangent_vec * scale_factor
+        v_norm_clipped = v_norm * scale_factor
+
         # Exponential map: exp_x(v) = cosh(||v||_L/r) x + sinh(||v||_L/r) (r * v/||v||_L)
         x_new = (
-            torch.cosh(v_norm / radius) * points
-            + torch.sinh(v_norm / radius) * tangent_vec / v_norm * radius
+            torch.cosh(v_norm_clipped / radius) * points
+            + torch.sinh(v_norm_clipped / radius) * tangent_vec_clipped / v_norm_clipped * radius
         )
 
         # Normalize to maintain hyperboloid constraint exactly

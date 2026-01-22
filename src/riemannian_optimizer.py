@@ -267,9 +267,18 @@ class RiemannianSGDMomentum(RiemannianSGD):
                 # Parallel transport velocity from previous tangent space to current
                 if self.state_initialized:
                     velocity = self._parallel_transport(prev_point, p.data, velocity)
+                    # Check for NaN/inf after parallel transport
+                    if torch.isnan(velocity).any() or torch.isinf(velocity).any():
+                        raise ValueError("NaN detected after parallel transport")
 
                 # Update velocity
                 velocity = self.momentum * velocity - lr * grad
+
+                # Clip velocity magnitude
+                velocity_norm = torch.norm(velocity)
+                max_velocity_norm = 10.0
+                if velocity_norm > max_velocity_norm:
+                    velocity = velocity * (max_velocity_norm / velocity_norm)
 
                 # Store current point before update
                 param_state["prev_point"] = p.data.clone()
