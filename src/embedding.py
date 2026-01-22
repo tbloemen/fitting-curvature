@@ -3,50 +3,50 @@ import torch.nn as nn
 from torch import Tensor
 from tqdm import tqdm
 
+from src.affinities import compute_perplexity_affinities
+from src.kernels import compute_q_matrix
 from src.manifolds import Euclidean, Hyperboloid, Manifold, Sphere
-from src.matrices import compute_euclidean_distances_batched
-from src.riemannian_optimizer import RiemannianSGD
-from src.samplers import SamplerType, create_sampler
-from src.types import InitMethod, LossType
+from src.riemannian_optimizer import RiemannianSGDMomentum
+from src.types import InitMethod
 
 
-def compute_loss_batched(
-    embedded_distances: Tensor,
-    target_distances: Tensor,
-    loss_type: LossType = LossType.GU2019,
-) -> Tensor:
+def compute_tsne_kl_loss(Q: Tensor, V: Tensor, eps: float = 1e-12) -> Tensor:
     """
-    Compute loss function for batched pairs.
+    Compute KL divergence loss for t-SNE.
+
+    KL(V || Q) = sum_i sum_j V_ij * log(V_ij / Q_ij)
+               = sum(V * log(V)) - sum(V * log(Q))
+
+    Since we're optimizing, we only need: -sum(V * log(Q))
+    (the V * log(V) term is constant w.r.t. embedding)
 
     Parameters
     ----------
-    embedded_distances : Tensor, shape (batch_size,)
-        Pairwise distances in the embedded space for sampled pairs
-    target_distances : Tensor, shape (batch_size,)
-        Target pairwise distances for sampled pairs
-    loss_type : LossType
-        Type of loss function: GU2019 for relative distortion or MSE for mean squared error
+    Q : Tensor, shape (n_points, n_points)
+        Low-dimensional affinity matrix from t-distribution kernel
+    V : Tensor, shape (n_points, n_points)
+        High-dimensional affinity matrix from perplexity computation
+    eps : float
+        Small constant to avoid log(0)
 
     Returns
     -------
     Tensor
-        Scalar loss value
+        Scalar KL divergence loss
     """
-    if loss_type == LossType.GU2019:
-        # Gu et al. (2019) relative distortion loss
-        # L = sum((d_embedded / d_target - 1)^2)
-        # Add small epsilon to avoid division by zero
-        loss = torch.sum((embedded_distances / (target_distances + 1e-8) - 1) ** 2)
-    elif loss_type == LossType.MSE:
-        # Mean squared error (stress function)
-        loss = torch.sum((embedded_distances - target_distances) ** 2)
+    # Only compute the part that depends on Q
+    # Mask out diagonal (self-affinities should be 0)
+    mask = ~torch.eye(Q.shape[0], dtype=torch.bool, device=Q.device)
+    V_masked = V[mask]
+    Q_masked = Q[mask]
 
+    loss = -torch.sum(V_masked * torch.log(Q_masked + eps))
     return loss
 
 
 class ConstantCurvatureEmbedding(nn.Module):
     """
-    Learn embeddings in constant curvature spaces using distance preservation.
+    Learn embeddings in constant curvature spaces using t-SNE.
 
     Supports three geometries:
     - k > 0: Spherical (embedded in R^(d+1))
@@ -101,28 +101,6 @@ class ConstantCurvatureEmbedding(nn.Module):
         """
         return self.manifold.pairwise_distances(points)
 
-    def pairwise_distances_batched(
-        self, indices_i: Tensor, indices_j: Tensor
-    ) -> Tensor:
-        """
-        Compute distances for batched pairs.
-
-        Parameters
-        ----------
-        indices_i : Tensor, shape (batch_size,)
-            First point indices
-        indices_j : Tensor, shape (batch_size,)
-            Second point indices
-
-        Returns
-        -------
-        Tensor, shape (batch_size,)
-            Distances for sampled pairs
-        """
-        return self.manifold.pairwise_distances_batched(
-            self.points, indices_i, indices_j
-        )
-
     def forward(self) -> Tensor:
         """Return current embedding distances."""
         return self.pairwise_distances(self.points)
@@ -136,23 +114,30 @@ def fit_embedding(
     data: Tensor,
     embed_dim: int,
     curvature: float,
-    init_scale: float,
     device: torch.device,
+    perplexity: float = 30.0,
     n_iterations: int = 1000,
-    lr: float = 0.01,
+    early_exaggeration_iterations: int = 250,
+    early_exaggeration_factor: float = 12.0,
+    learning_rate: float = 200.0,
+    momentum_early: float = 0.5,
+    momentum_main: float = 0.8,
+    init_method: InitMethod = InitMethod.PCA,
+    init_scale: float = 0.0001,
     verbose: bool = True,
-    loss_type: LossType = LossType.GU2019,
-    sampler_type: SamplerType = SamplerType.RANDOM,
-    batch_size: int = 4096,
-    sampler_kwargs: dict | None = None,
-    init_method: InitMethod = InitMethod.RANDOM,
 ) -> ConstantCurvatureEmbedding:
     """
-    Fit a constant curvature embedding to preserve distances from raw data.
+    Fit a t-SNE embedding in constant curvature space.
 
-    This function computes Euclidean distances on-the-fly during training,
-    avoiding the need to store an N×N distance matrix. This enables training
-    on very large datasets with O(N×D) memory instead of O(N²).
+    t-SNE (t-distributed Stochastic Neighbor Embedding) uses probability
+    distributions to preserve local neighborhood structure. This implementation
+    extends t-SNE to curved spaces (hyperbolic and spherical).
+
+    The algorithm has two phases:
+    1. Early exaggeration (default 250 iterations): V is multiplied by 12,
+       momentum=0.5. This encourages clusters to form.
+    2. Main optimization (remaining iterations): Normal V, momentum=0.8.
+       Fine-tunes the embedding.
 
     Parameters
     ----------
@@ -162,105 +147,115 @@ def fit_embedding(
         Embedding dimensionality
     curvature : float
         Curvature of the space (k > 0: sphere, k = 0: Euclidean, k < 0: hyperbolic)
-    init_scale : float
-        Initialization scale for embeddings
-    n_iterations : int
-        Number of optimization iterations (default: 1000)
-    lr : float
-        Learning rate (for RSGD, typically use smaller values than Adam)
-    verbose : bool
-        Print progress (default: True)
     device : torch.device
-        Device to use for computation (defaults to CUDA if available, else CPU)
-    loss_type : LossType
-        Type of loss function: GU2019 for relative distortion (default) or MSE for mean squared error
-    sampler_type : SamplerType
-        Type of pair sampler: RANDOM, KNN, STRATIFIED, NEGATIVE (default: RANDOM)
-    batch_size : int
-        Number of pairs to sample per iteration (default: 4096)
-    sampler_kwargs : dict, optional
-        Additional arguments for sampler (e.g., {'k': 15} for KNN)
+        Device to use for computation
+    perplexity : float
+        Perplexity parameter (effective number of neighbors). Default: 30.
+    n_iterations : int
+        Total number of optimization iterations. Default: 1000.
+    early_exaggeration_iterations : int
+        Number of iterations for early exaggeration phase. Default: 250.
+    early_exaggeration_factor : float
+        Factor to multiply V by during early exaggeration. Default: 12.0.
+    learning_rate : float
+        Learning rate for optimization. Default: 200.0 (standard t-SNE value).
+    momentum_early : float
+        Momentum during early exaggeration. Default: 0.5.
+    momentum_main : float
+        Momentum during main optimization. Default: 0.8.
     init_method : InitMethod
-        Initialization method: RANDOM (default) or PCA
+        Initialization method. Default: PCA (recommended for t-SNE).
+    init_scale : float
+        Initialization scale for random init. Default: 0.0001.
+    verbose : bool
+        Print progress information. Default: True.
 
     Returns
     -------
     ConstantCurvatureEmbedding
-        Fitted embedding model
+        Fitted t-SNE embedding model
 
-    Notes
-    -----
-    Always uses Riemannian SGD optimizer following Gu et al. (2019).
-    Uses batched training with configurable pair sampling strategy.
-    Distances are computed on-the-fly from raw data to minimize memory usage.
-
-    Loss functions:
-    - GU2019: Relative distortion loss from Gu et al. (2019) Eq 2:
-              L = sum((d_P(xi,xj)/d_G(Xi,Xj) - 1)^2) for sampled pairs
-    - MSE: Mean squared error: L = sum((d_P(xi,xj) - d_G(Xi,Xj))^2) for sampled pairs
+    References
+    ----------
+    - van der Maaten & Hinton (2008): "Visualizing Data using t-SNE"
     """
-
     # Move data to device
     data = data.to(device)
-
     n_points = data.shape[0]
 
-    # Initialize model with data-driven scale on the specified device
-    model = ConstantCurvatureEmbedding(
-        n_points, embed_dim, curvature, init_scale, device, init_method, data
-    )
-
-    # Create sampler
-    if sampler_kwargs is None:
-        sampler_kwargs = {}
-
-    sampler = create_sampler(
-        sampler_type=sampler_type,
-        n_points=n_points,
-        batch_size=batch_size,
-        device=device,
-        **sampler_kwargs,
-    )
-
-    # Precompute sampler data structures (e.g., k-NN graph) from raw data
     if verbose:
-        print(
-            f"Initializing {sampler_type.value} sampler with batch_size={batch_size}..."
+        manifold_name = (
+            "Euclidean"
+            if curvature == 0
+            else ("hyperbolic" if curvature < 0 else "spherical")
         )
-    sampler.precompute(data)
+        print(f"Fitting t-SNE embedding in {manifold_name} space (k={curvature})")
+        print(f"  {n_points} points, embed_dim={embed_dim}, perplexity={perplexity}")
 
-    optimizer = RiemannianSGD(model.parameters(), lr=lr, curvature=curvature)
+    # Step 1: Compute high-dimensional affinities
     if verbose:
-        manifold_type = "Euclidean"
-        if curvature > 0:
-            manifold_type = "spherical"
-        elif curvature < 0:
-            manifold_type = "hyperbolic"
-        print(f"Using Riemannian SGD optimizer for {manifold_type} space")
+        print("Computing high-dimensional affinities...")
+    V = compute_perplexity_affinities(data, perplexity=perplexity, verbose=verbose)
+    V = V.to(device)
+
+    # Step 2: Initialize embedding
+    model = ConstantCurvatureEmbedding(
+        n_points=n_points,
+        embed_dim=embed_dim,
+        curvature=curvature,
+        init_scale=init_scale,
+        device=device,
+        init_method=init_method,
+        data=data,
+    )
+
+    # Step 3: Create optimizer with momentum
+    optimizer = RiemannianSGDMomentum(
+        model.parameters(),
+        lr=learning_rate,
+        curvature=curvature,
+        momentum=momentum_early,
+    )
+
+    if verbose:
+        print(f"Starting optimization: {n_iterations} iterations")
+        print(
+            f"  Early exaggeration: {early_exaggeration_iterations} iterations, "
+            f"factor={early_exaggeration_factor}, momentum={momentum_early}"
+        )
+        print(
+            f"  Main phase: {n_iterations - early_exaggeration_iterations} iterations, "
+            f"momentum={momentum_main}"
+        )
 
     # Training loop
-    pbar = tqdm(range(n_iterations), disable=not verbose, desc="Training")
-    for _ in pbar:
+    pbar = tqdm(range(n_iterations), disable=(not verbose), desc="t-SNE")
+
+    for iteration in pbar:
+        # Phase transition
+        if iteration == early_exaggeration_iterations:
+            optimizer.set_momentum(momentum_main)
+            if verbose:
+                pbar.set_description("t-SNE (main)")
+
         optimizer.zero_grad()
 
-        # Sample pairs
-        indices_i, indices_j = sampler.sample_pairs()
+        # Determine V to use (exaggerated or normal)
+        if iteration < early_exaggeration_iterations:
+            V_current = V * early_exaggeration_factor
+        else:
+            V_current = V
 
-        # Compute target distances on-the-fly from raw data
-        target_distances = compute_euclidean_distances_batched(
-            data, indices_i, indices_j
-        )
+        # Compute Q matrix using geodesic distances
+        Q = compute_q_matrix(model.manifold, model.points, dof=1.0)
 
-        # Get embedded distances for sampled pairs
-        embedded_distances = model.pairwise_distances_batched(indices_i, indices_j)
-
-        # Compute loss
-        loss = compute_loss_batched(embedded_distances, target_distances, loss_type)
+        # Compute KL divergence loss
+        loss = compute_tsne_kl_loss(Q, V_current)
 
         loss.backward()
         optimizer.step()
 
         if verbose:
-            pbar.set_postfix({"loss": f"{loss.item():.6f}"})
+            pbar.set_postfix({"loss": f"{loss.item():.4f}"})
 
     return model

@@ -6,8 +6,7 @@ from src.embedding import fit_embedding
 from src.load_data import load_raw_data
 from src.matrices import get_default_init_scale, normalize_data
 from src.metrics import evaluate_embedding
-from src.samplers import SamplerType
-from src.types import InitMethod, LossType
+from src.types import InitMethod
 from src.visualisation import default_plot, project_to_2d
 
 
@@ -38,7 +37,6 @@ def main():
     hyperparam_config = config["hyperparameters"]
     experiment_config = config["experiments"]
     evaluation_config = config["evaluation"]
-    batching_config = config.get("batching", {})
 
     # Check device availability
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -57,8 +55,14 @@ def main():
 
     embed_dim = embedding_config["embed_dim"]
     n_iterations = embedding_config["n_iterations"]
-    loss_type = LossType(embedding_config["loss_type"])
-    init_method = InitMethod(embedding_config.get("init_method", "random"))
+    init_method = InitMethod(embedding_config.get("init_method", "pca"))
+    perplexity = embedding_config.get("perplexity", 30.0)
+    early_exaggeration_iterations = embedding_config.get(
+        "early_exaggeration_iterations", 250
+    )
+    early_exaggeration_factor = embedding_config.get("early_exaggeration_factor", 12.0)
+    momentum_early = embedding_config.get("momentum_early", 0.5)
+    momentum_main = embedding_config.get("momentum_main", 0.8)
 
     # Normalize data so mean pairwise distance = 1
     print("\nNormalizing data...")
@@ -77,17 +81,11 @@ def main():
     learning_rates = hyperparam_config["learning_rates"]
     n_neighbors = evaluation_config["n_neighbors"]
 
-    # Extract batching parameters
-    batch_size = batching_config.get("batch_size", 4096)
-    sampler_type = SamplerType(batching_config.get("sampler_type", "random"))
-    sampler_params = batching_config.get("sampler_params", {})
-
     for k in curvatures:
         print(f"\n{'=' * 60}")
-        print(f"Training embedding with curvature k = {k}")
-        print(f"Loss function: {loss_type.value}")
+        print(f"Training t-SNE embedding with curvature k = {k}")
+        print(f"Perplexity: {perplexity}")
         print(f"Initialization method: {init_method.value}")
-        print(f"Batch size: {batch_size}, sampler: {sampler_type.value}")
         print(f"{'=' * 60}")
 
         # Get learning rate for this curvature
@@ -98,21 +96,22 @@ def main():
             lr = learning_rates["k"]
             print(f"Using default learning rate: {lr}")
 
-        # Train the embedding (distances computed on-the-fly from raw data)
+        # Train the embedding
         model = fit_embedding(
             data=X,
             embed_dim=embed_dim,
             curvature=k,
-            n_iterations=n_iterations,
             device=device,
-            lr=lr,
-            verbose=True,
-            init_scale=init_scale,
-            loss_type=loss_type,
-            sampler_type=sampler_type,
-            batch_size=batch_size,
-            sampler_kwargs=sampler_params,
+            perplexity=perplexity,
+            n_iterations=n_iterations,
+            early_exaggeration_iterations=early_exaggeration_iterations,
+            early_exaggeration_factor=early_exaggeration_factor,
+            learning_rate=lr,
+            momentum_early=momentum_early,
+            momentum_main=momentum_main,
             init_method=init_method,
+            init_scale=init_scale,
+            verbose=True,
         )
 
         # Get the learned embeddings (move to CPU for visualization)
