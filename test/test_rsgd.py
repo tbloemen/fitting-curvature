@@ -202,9 +202,7 @@ def test_all_curvatures(curvature, synthetic_dataset):
         # Sphere: ||x||^2 = 1/k (radius^2)
         expected_norm_sq = 1.0 / curvature
         actual_norm_sq = (embeddings**2).sum(dim=1)
-        assert torch.allclose(
-            actual_norm_sq, torch.tensor(expected_norm_sq), atol=1e-4
-        )
+        assert torch.allclose(actual_norm_sq, torch.tensor(expected_norm_sq), atol=1e-4)
     elif curvature < 0:
         # Hyperboloid: -x0^2 + ||x_spatial||^2 = -radius^2 = -1/|k|
         x0 = embeddings[:, 0]
