@@ -18,12 +18,12 @@ from torch import Tensor
 from src.types import InitMethod
 
 
-def _pca_init(data: Tensor, n_components: int, device: torch.device) -> Tensor:
+def _pca_init(data: Tensor, n_components: int, init_scale: float, device: torch.device) -> Tensor:
     """
-    Initialize points using PCA.
+    Initialize points using PCA with specified scale.
 
-    Performs PCA on high-dimensional data and returns scaled coordinates
-    suitable for manifold initialization.
+    Performs PCA on high-dimensional data and scales the coordinates to have
+    standard deviation equal to init_scale, matching the spread of random initialization.
 
     Parameters
     ----------
@@ -31,6 +31,8 @@ def _pca_init(data: Tensor, n_components: int, device: torch.device) -> Tensor:
         High-dimensional data, shape (n_points, n_features)
     n_components : int
         Number of principal components to keep (embedding dimension)
+    init_scale : float
+        Target standard deviation for the initialized coordinates
     device : torch.device
         Target device for the output tensor
 
@@ -38,7 +40,7 @@ def _pca_init(data: Tensor, n_components: int, device: torch.device) -> Tensor:
     -------
     Tensor
         PCA-initialized points, shape (n_points, n_components)
-        Rescaled by dividing by std(first_component) * 10000 to avoid convergence issues
+        Scaled to have std ≈ init_scale
     """
 
     # Center the data
@@ -50,10 +52,13 @@ def _pca_init(data: Tensor, n_components: int, device: torch.device) -> Tensor:
     # Project data onto first n_components principal components
     X_pca = U[:, :n_components] @ torch.diag(S[:n_components])
 
-    # Rescale to avoid convergence issues
-    # Divide by std of first component * 10000
-    scale_factor = X_pca[:, 0].std() * 10000
-    X_pca = X_pca / scale_factor
+    # Scale to match init_scale (similar to random initialization)
+    current_std = X_pca.std()
+    if current_std > 1e-10:
+        X_pca = X_pca / current_std * init_scale
+    else:
+        # If std is near zero, just use init_scale directly
+        X_pca = X_pca * init_scale
 
     return X_pca.to(device)
 
@@ -251,7 +256,7 @@ class Euclidean(Manifold):
         elif init_method == InitMethod.PCA:
             if data is None:
                 raise ValueError("Data needs to be supplied for PCA")
-            return _pca_init(data, embed_dim, device)
+            return _pca_init(data, embed_dim, init_scale, device)
 
     def pairwise_distances(self, points: Tensor) -> Tensor:
         """Compute Euclidean distances."""
@@ -334,7 +339,7 @@ class Sphere(Manifold):
             # Use PCA to get spatial coordinates
             if data is None:
                 raise ValueError("Data needs to be supplied for PCA")
-            spatial_init = _pca_init(data, embed_dim, device)
+            spatial_init = _pca_init(data, embed_dim, init_scale, device)
 
         # Project to sphere by computing x0 from constraint
         radius_squared = self.radius_squared
@@ -480,7 +485,7 @@ class Hyperboloid(Manifold):
             # Use PCA to get spatial coordinates
             if data is None:
                 raise ValueError("Data needs to be supplied for PCA")
-            spatial_init = _pca_init(data, embed_dim, device)
+            spatial_init = _pca_init(data, embed_dim, init_scale, device)
 
         # Project to hyperboloid by computing x0 from constraint
         radius_squared = self.radius_squared
@@ -591,10 +596,21 @@ class Hyperboloid(Manifold):
         v_lorentz_sq = torch.clamp(v_lorentz_sq, min=1e-15)
         v_norm = torch.sqrt(v_lorentz_sq)
 
+        # Clip the norm to prevent numerical overflow in cosh/sinh
+        # When v_norm/radius becomes large (>10), cosh and sinh explode
+        max_norm = 10.0 * radius
+        scale_factor = torch.where(
+            v_norm > max_norm,
+            max_norm / v_norm,
+            torch.ones_like(v_norm)
+        )
+        tangent_vec_clipped = tangent_vec * scale_factor
+        v_norm_clipped = v_norm * scale_factor
+
         # Exponential map: exp_x(v) = cosh(||v||_L/r) x + sinh(||v||_L/r) (r * v/||v||_L)
         x_new = (
-            torch.cosh(v_norm / radius) * points
-            + torch.sinh(v_norm / radius) * tangent_vec / v_norm * radius
+            torch.cosh(v_norm_clipped / radius) * points
+            + torch.sinh(v_norm_clipped / radius) * tangent_vec_clipped / v_norm_clipped * radius
         )
 
         # Normalize to maintain hyperboloid constraint exactly
