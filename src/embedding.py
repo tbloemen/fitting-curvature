@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 from tqdm import tqdm
+from typing import Optional, Callable
 
 from src.affinities import compute_perplexity_affinities
 from src.kernels import compute_q_matrix
@@ -125,6 +126,7 @@ def fit_embedding(
     init_method: InitMethod = InitMethod.PCA,
     init_scale: float = 0.0001,
     verbose: bool = True,
+    callback: Optional[Callable[[int, float, 'ConstantCurvatureEmbedding', str], bool]] = None,
 ) -> ConstantCurvatureEmbedding:
     """
     Fit a t-SNE embedding in constant curvature space.
@@ -169,6 +171,13 @@ def fit_embedding(
         Initialization scale for random init. Default: 0.0001.
     verbose : bool
         Print progress information. Default: True.
+    callback : Optional[Callable[[int, float, ConstantCurvatureEmbedding, str], bool]]
+        Optional callback function called every 10 iterations with:
+        - iteration: current iteration number
+        - loss: current loss value
+        - model: current embedding model
+        - phase: "early" or "main" phase indicator
+        Should return True to continue training or False to stop early.
 
     Returns
     -------
@@ -257,5 +266,14 @@ def fit_embedding(
 
         if verbose:
             pbar.set_postfix({"loss": f"{loss.item():.4f}"})
+
+        # Call callback every 10 iterations
+        if callback is not None and iteration % 10 == 0:
+            phase = "early" if iteration < early_exaggeration_iterations else "main"
+            should_continue = callback(iteration, loss.item(), model, phase)
+            if not should_continue:
+                if verbose:
+                    print("\nTraining stopped by callback")
+                break
 
     return model
