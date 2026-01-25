@@ -81,6 +81,10 @@ def main():
     learning_rates = hyperparam_config["learning_rates"]
     n_neighbors = evaluation_config["n_neighbors"]
 
+    # Get visualization settings
+    viz_config = config.get("visualization", {})
+    spherical_projection = viz_config.get("spherical_projection", "direct")
+
     for k in curvatures:
         print(f"\n{'=' * 60}")
         print(f"Training t-SNE embedding with curvature k = {k}")
