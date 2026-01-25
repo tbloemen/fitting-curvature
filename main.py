@@ -126,10 +126,17 @@ def main():
         print(f"Continuity: {continuity_score:.4f}")
 
         # Visualize the first two dimensions
-        x_proj, y_proj = project_to_2d(embeddings, k=k)
+        x_proj, y_proj = project_to_2d(
+            embeddings,
+            k=k,
+            projection=spherical_projection if k > 0 else "stereographic",
+        )
         y_labels = y.detach().cpu().numpy() if hasattr(y, "detach") else y
         fig = default_plot(x_proj, y_proj, labels=y_labels)
-        fig.suptitle(f"Embedding with curvature k = {k}")
+
+        # Add projection info to title for spherical embeddings
+        proj_info = f" ({spherical_projection} projection)" if k > 0 else ""
+        fig.suptitle(f"Embedding with curvature k = {k}{proj_info}")
         fig.savefig(f"plots/plot_{k}.png", dpi=150, bbox_inches="tight")
         print(f"Saved visualization to plots/plot_{k}.png")
 
