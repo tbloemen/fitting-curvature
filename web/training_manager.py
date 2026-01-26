@@ -20,6 +20,7 @@ class TrainingStatus(str, Enum):
     """Training status enum."""
 
     IDLE = "idle"
+    PRECOMPUTING = "precomputing"
     RUNNING = "running"
     COMPLETED = "completed"
     STOPPED = "stopped"
@@ -54,6 +55,7 @@ class TrainingManager:
         self._training_thread: Optional[threading.Thread] = None
         self._data_cache: Optional[tuple[torch.Tensor, torch.Tensor]] = None
         self._lock = threading.Lock()
+        self._observers: list = []  # Callbacks to notify on state updates
 
     def load_data(
         self, dataset: str, n_samples: int = -1
@@ -89,6 +91,38 @@ class TrainingManager:
     def clear_cache(self):
         """Clear the data cache."""
         self._data_cache = None
+
+    def add_observer(self, callback):
+        """
+        Add an observer callback that will be notified on state updates.
+
+        Parameters
+        ----------
+        callback : callable
+            Function to call when state is updated (no arguments)
+        """
+        if callback not in self._observers:
+            self._observers.append(callback)
+
+    def remove_observer(self, callback):
+        """
+        Remove an observer callback.
+
+        Parameters
+        ----------
+        callback : callable
+            Function to remove from observers
+        """
+        if callback in self._observers:
+            self._observers.remove(callback)
+
+    def _notify_observers(self):
+        """Notify all registered observers of state update."""
+        for callback in self._observers:
+            try:
+                callback()
+            except Exception as e:
+                print(f"Error in observer callback: {e}")
 
     def _training_callback(
         self, iteration: int, loss: float, model: ConstantCurvatureEmbedding, phase: str
@@ -133,7 +167,10 @@ class TrainingManager:
             # Increment version to signal UI update
             self.state.version += 1
 
-            return True
+        # Notify observers outside the lock to avoid potential deadlocks
+        self._notify_observers()
+
+        return True
 
     def start_training(self, config: Dict[str, Any]) -> None:
         """
@@ -173,6 +210,12 @@ class TrainingManager:
             Configuration dictionary
         """
         try:
+            # Set precomputing status
+            with self._lock:
+                self.state.status = TrainingStatus.PRECOMPUTING
+                self.state.phase = "precomputing"
+            self._notify_observers()
+
             # Load data
             dataset = config["data"]["dataset"]
             n_samples = config["data"]["n_samples"]
@@ -222,6 +265,12 @@ class TrainingManager:
 
             # Determine device
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+            # Update status to running after precomputation
+            with self._lock:
+                self.state.status = TrainingStatus.RUNNING
+                self.state.phase = "training"
+            self._notify_observers()
 
             # Run embedding with callback
             model = fit_embedding(

@@ -33,8 +33,12 @@ class ThreeJSEmbeddingPlot:
         self.projection = projection
         self.plot_id = f"plot_{uuid.uuid4().hex[:8]}"
         self.container = None
-        self.timer = None
-        self.last_version = -1
+        self.last_iteration = -1
+        self._update_pending = False
+        self._ui_timer = None
+
+        # Register as observer to set update flag (thread-safe)
+        self.training_manager.add_observer(self._on_data_updated)
 
         # Color palette (tab10 from matplotlib)
         self.colors_hex = [
@@ -113,6 +117,15 @@ class ThreeJSEmbeddingPlot:
 
         return points
 
+    def _on_data_updated(self):
+        """
+        Called by training manager when new data is available (from background thread).
+
+        Sets a flag that will be checked by the UI timer to trigger actual update.
+        This is thread-safe since it only sets a boolean flag.
+        """
+        self._update_pending = True
+
     def _get_init_script(self) -> str:
         """
         Generate the Three.js initialization script.
@@ -146,31 +159,38 @@ class ThreeJSEmbeddingPlot:
         self.container = ui.html(container_html, sanitize=False)
 
         # Initialize Three.js scene after a short delay to ensure container is rendered
-        # Increased delay to 0.5s to ensure DOM is fully ready
         ui.timer(
             0.5,
             lambda: ui.run_javascript(self._get_init_script()),
             once=True,
         )
 
-        # Set up auto-update timer (5 FPS for smooth updates, same as Plotly version)
-        self.timer = ui.timer(0.2, self.update)
+        # Start fast timer to check for pending updates
+        # This runs in the UI thread, so it's safe to call ui.run_javascript()
+        # The observer pattern sets a flag, and this timer acts on it immediately
+        self._ui_timer = ui.timer(0.016, self._check_and_update)  # ~60 FPS
 
         return self.container
+
+    def _check_and_update(self):
+        """Check if update is pending and perform it (runs in UI thread)."""
+        if self._update_pending:
+            self._update_pending = False
+            self.update()
 
     def update(self):
         """Update the plot with current state."""
         state = self.training_manager.get_state()
 
-        # Only update if training is running or just completed
+        # Only update if training is running or just completed (not during precomputing)
         if state.status not in [TrainingStatus.RUNNING, TrainingStatus.COMPLETED]:
             return
 
-        # Only update if version has changed
-        if state.version == self.last_version:
+        # Only update every 10 iterations (or on first update, or on completion)
+        if state.iteration == self.last_iteration:
             return
 
-        self.last_version = state.version
+        self.last_iteration = state.iteration
 
         # Check if we have data
         if state.embeddings is None or state.labels is None:
@@ -225,6 +245,12 @@ class ThreeJSEmbeddingPlot:
     def set_projection(self, projection: str):
         """Change projection method."""
         self.projection = projection
-        # Force immediate update by resetting version
-        self.last_version = -1
+        # Force immediate update by resetting iteration
+        self.last_iteration = -1
         self.update()
+
+    def cleanup(self):
+        """Clean up resources and unregister observer."""
+        self.training_manager.remove_observer(self._on_data_updated)
+        if self._ui_timer is not None:
+            self._ui_timer.deactivate()

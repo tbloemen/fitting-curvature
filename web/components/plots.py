@@ -28,8 +28,7 @@ def create_loss_chart(state: TrainingState) -> go.Figure:
             title="Loss History",
             xaxis_title="Iteration",
             yaxis_title="Loss",
-            width=700,
-            height=300,
+            height=600,
             template="plotly_white",
         )
         return fig
@@ -55,8 +54,7 @@ def create_loss_chart(state: TrainingState) -> go.Figure:
         xaxis_title="Iteration",
         yaxis_title="Loss",
         yaxis_type="log",  # Log scale for loss
-        width=700,
-        height=300,
+        height=600,
         template="plotly_white",
         hovermode="closest",
     )

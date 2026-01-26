@@ -50,38 +50,28 @@ def create_app():
                         # Visualization section
                         ui.label("Visualizations").classes("text-h5 font-bold")
 
-                        # Embedding plot
-                        with ui.card().classes("w-full"):
-                            ui.label("Embedding Plot").classes("text-h6 font-bold mb-2")
+                        # Embedding plot and loss chart side by side
+                        with ui.row().classes("w-full gap-4").style("flex-wrap: nowrap;"):
+                            # Embedding plot (left side) - fixed width
+                            with ui.card().style("flex-shrink: 0;"):
+                                ui.label("Embedding Plot").classes("text-h6 font-bold mb-2")
 
-                            # Projection selector (for spherical embeddings)
-                            projection_select = ui.select(
-                                label="Projection (for spherical k > 0)",
-                                options={
-                                    "direct": "Direct",
-                                    "stereographic": "Stereographic",
-                                    "azimuthal_equidistant": "Azimuthal Equidistant",
-                                    "orthographic": "Orthographic",
-                                },
-                                value="direct",
-                            ).classes("w-64 mb-4")
+                                embedding_plot = ThreeJSEmbeddingPlot(
+                                    training_manager, projection="direct"
+                                )
+                                embedding_plot.create()
 
-                            embedding_plot = ThreeJSEmbeddingPlot(
-                                training_manager, projection="direct"
-                            )
-                            embedding_plot.create()
+                            # Loss chart (right side) - takes remaining space
+                            with ui.card().classes("flex-1").style("min-width: 0;"):
+                                ui.label("Loss History").classes("text-h6 font-bold mb-2")
+                                loss_chart = LossChart(training_manager)
+                                loss_chart.create()
 
-                            # Update projection when changed
-                            projection_select.on(
-                                "update:model-value",
-                                lambda e: embedding_plot.set_projection(e.args),
-                            )
-
-                        # Loss chart
-                        with ui.card().classes("w-full mt-4"):
-                            ui.label("Loss History").classes("text-h6 font-bold mb-2")
-                            loss_chart = LossChart(training_manager)
-                            loss_chart.create()
+                        # Connect config editor projection changes to embedding plot
+                        config_editor.inputs["spherical_projection"].on(
+                            "update:model-value",
+                            lambda e: embedding_plot.set_projection(e.args),
+                        )
 
                         # Instructions
                         with ui.expansion("Instructions", icon="help").classes(

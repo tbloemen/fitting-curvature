@@ -177,20 +177,21 @@ class ConfigEditor:
                     ).classes("w-full")
 
             # Visualization section
-            with ui.expansion("Visualization", icon="visibility", value=False).classes(
+            with ui.expansion("Visualization", icon="visibility", value=True).classes(
                 "w-full"
             ):
                 with ui.column().classes("gap-2 p-2"):
                     self.inputs["spherical_projection"] = ui.select(
-                        label="Spherical projection",
+                        label="Projection (for spherical k > 0)",
                         options={
+                            "direct": "Direct",
                             "stereographic": "Stereographic",
                             "azimuthal_equidistant": "Azimuthal Equidistant",
                             "orthographic": "Orthographic",
-                            "direct": "Direct",
                         },
                         value=self.config["visualization"]["spherical_projection"],
                     ).classes("w-full")
+                    ui.label("Note: This setting only affects spherical embeddings (k > 0)").classes("text-xs text-gray-500")
 
             # Action buttons
             with ui.row().classes("w-full gap-2 mt-4"):
@@ -304,3 +305,7 @@ class ConfigEditor:
     def reload_config(self):
         """Reload configuration from file."""
         self.config = load_config()
+
+    def get_projection(self) -> str:
+        """Get current projection setting."""
+        return self.inputs["spherical_projection"].value

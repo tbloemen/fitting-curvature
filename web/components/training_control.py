@@ -150,6 +150,7 @@ class TrainingControl:
         # Update status label
         status_colors = {
             TrainingStatus.IDLE: ("gray", "Idle"),
+            TrainingStatus.PRECOMPUTING: ("purple", "Precomputing..."),
             TrainingStatus.RUNNING: ("green", "Running"),
             TrainingStatus.COMPLETED: ("blue", "Completed"),
             TrainingStatus.STOPPED: ("orange", "Stopped"),
@@ -173,7 +174,10 @@ class TrainingControl:
         )
 
         # Update phase label
-        if state.phase == "early":
+        if state.phase == "precomputing":
+            self.phase_label.text = "(Computing affinities)"
+            self.phase_label.style("color: purple")
+        elif state.phase == "early":
             self.phase_label.text = "(Early Exaggeration)"
             self.phase_label.style("color: orange")
         elif state.phase == "main":
@@ -189,7 +193,7 @@ class TrainingControl:
             self.loss_label.text = "N/A"
 
         # Update button states based on status
-        if state.status == TrainingStatus.RUNNING:
+        if state.status in [TrainingStatus.RUNNING, TrainingStatus.PRECOMPUTING]:
             self.start_button.disable()
             self.stop_button.enable()
         else:
