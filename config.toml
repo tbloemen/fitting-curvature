@@ -1,64 +1,28 @@
-# Configuration file for embedding experiments
-
 [data]
-# Dataset to use: "mnist"
 dataset = "mnist"
-
-# Number of samples to use (use -1 for all samples)
 n_samples = 1000
 
 [embedding]
-# Embedding dimension
 embed_dim = 2
-
-# Number of optimization iterations
 n_iterations = 1000
-
-# Initialization method: "random" for random initialization or "pca" for PCA-based initialization
 init_method = "pca"
-
-# Perplexity parameter (effective number of neighbors). Typical values: 5-50.
 perplexity = 30.0
-
-# Number of iterations for early exaggeration phase
 early_exaggeration_iterations = 250
-
-# Factor to multiply affinities by during early exaggeration
 early_exaggeration_factor = 12.0
-
-# Momentum during early exaggeration phase
 momentum_early = 0.5
-
-# Momentum during main optimization phase
 momentum_main = 0.8
 
 [hyperparameters]
-# Learning rates for different curvatures
-# k > 0: spherical, k = 0: Euclidean, k < 0: hyperbolic
-# Can specify per-curvature learning rates:
-# learning_rates = { "-1" = 10.0, "0" = 200.0, "1" = 10.0 }
-# Or use a default "k" key for all curvatures:
-learning_rates = { k = 200.0 }
-
-# Initial scale for embedding initialization (used with random init)
-# "auto" computes scale from data statistics
-# Or specify a float value for manual control
 init_scale = "auto"
 
 [experiments]
-# Curvatures to test
-# k > 0: spherical, k = 0: Euclidean, k < 0: hyperbolic
-curvatures = [-2, -1, -0.5, -0.1, 0, 0.1, 0.5, 1, 2]
+curvatures = [ -1,]
 
 [evaluation]
-# Number of neighbors for trustworthiness and continuity metrics
 n_neighbors = 5
 
 [visualization]
-# Projection method for spherical embeddings (k > 0)
-# Options: "stereographic", "azimuthal_equidistant", "orthographic", "direct"
-# - stereographic: Conformal projection (preserves angles), rescaled to fit
-# - azimuthal_equidistant: Preserves distances from center point
-# - orthographic: Globe-like view (may hide back hemisphere)
-# - direct: Simply use spatial coordinates (simplest, naturally bounded)
 spherical_projection = "direct"
+
+[hyperparameters.learning_rates]
+k = 200.0

@@ -41,6 +41,7 @@ class TrainingState:
     error_message: str = ""
     loss_history: list = field(default_factory=list)
     model: Optional[ConstantCurvatureEmbedding] = None
+    version: int = 0  # Incremented each time embeddings are updated
 
 
 class TrainingManager:
@@ -129,6 +130,9 @@ class TrainingManager:
             # Track loss history
             self.state.loss_history.append((iteration, loss))
 
+            # Increment version to signal UI update
+            self.state.version += 1
+
             return True
 
     def start_training(self, config: Dict[str, Any]) -> None:
@@ -212,7 +216,7 @@ class TrainingManager:
             # Get init scale
             init_scale_config = config["hyperparameters"]["init_scale"]
             if init_scale_config == "auto":
-                init_scale = get_default_init_scale(data, embed_dim)
+                init_scale = get_default_init_scale(embed_dim)
             else:
                 init_scale = float(init_scale_config)
 

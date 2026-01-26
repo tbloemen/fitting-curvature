@@ -4,13 +4,14 @@ from typing import Any, Callable, Dict
 
 from nicegui import ui
 
-from web.config_manager import get_default_config, load_config, save_config, validate_config
+from web.config_manager import (get_default_config, load_config, save_config,
+                                validate_config)
 
 
 class ConfigEditor:
     """Configuration editor component."""
 
-    def __init__(self, on_save: Callable[[Dict[str, Any]], None] = None):
+    def __init__(self, on_save: Callable[[Dict[str, Any]], None]):
         """
         Initialize config editor.
 

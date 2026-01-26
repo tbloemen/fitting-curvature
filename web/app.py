@@ -3,7 +3,8 @@
 from nicegui import ui
 
 from web.components.config_editor import ConfigEditor
-from web.components.plots import EmbeddingPlot, LossChart
+from web.components.plots import LossChart
+from web.components.threejs_plot import ThreeJSEmbeddingPlot
 from web.components.training_control import TrainingControl
 from web.training_manager import TrainingManager
 
@@ -65,7 +66,7 @@ def create_app():
                                 value="direct",
                             ).classes("w-64 mb-4")
 
-                            embedding_plot = EmbeddingPlot(
+                            embedding_plot = ThreeJSEmbeddingPlot(
                                 training_manager, projection="direct"
                             )
                             embedding_plot.create()
