@@ -153,28 +153,15 @@ class ConfigEditor:
                 "w-full"
             ):
                 with ui.column().classes("gap-2 p-2"):
-                    ui.label("Curvature (select one for web interface)").classes(
-                        "text-sm font-bold"
-                    )
-
                     curvatures = self.config["experiments"]["curvatures"]
                     current_curvature = curvatures[0] if curvatures else 0
 
-                    self.inputs["curvature"] = ui.select(
+                    self.inputs["curvature"] = ui.number(
                         label="Curvature",
-                        options={
-                            -2: "k = -2 (Hyperbolic)",
-                            -1: "k = -1 (Hyperbolic)",
-                            -0.5: "k = -0.5 (Hyperbolic)",
-                            -0.1: "k = -0.1 (Hyperbolic)",
-                            0: "k = 0 (Euclidean)",
-                            0.1: "k = 0.1 (Spherical)",
-                            0.5: "k = 0.5 (Spherical)",
-                            1: "k = 1 (Spherical)",
-                            2: "k = 2 (Spherical)",
-                        },
                         value=current_curvature,
+                        step=0.1,
                     ).classes("w-full")
+                    ui.label("k < 0: Hyperbolic | k = 0: Euclidean | k > 0: Spherical").classes("text-xs text-gray-500")
 
             # Visualization section
             with ui.expansion("Visualization", icon="visibility", value=True).classes(
