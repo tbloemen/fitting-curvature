@@ -161,16 +161,17 @@ class TrainingControl:
         self.status_label.text = text
         self.status_label.style(f"color: {color}")
 
-        # Update progress
+        # Update progress (iterations are 0-indexed, so add 1 for correct percentage)
         if state.max_iterations > 0:
-            progress = state.iteration / state.max_iterations
+            progress = (state.iteration + 1) / state.max_iterations
             self.progress_bar.value = progress
         else:
             self.progress_bar.value = 0
 
-        # Update iteration label
+        # Update iteration label (iterations are 0-indexed, display as 1-indexed count)
+        iteration_count = state.iteration + 1 if state.max_iterations > 0 else 0
         self.iteration_label.text = (
-            f"Iteration: {state.iteration} / {state.max_iterations}"
+            f"Iteration: {iteration_count} / {state.max_iterations}"
         )
 
         # Update phase label

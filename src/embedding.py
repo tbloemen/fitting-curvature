@@ -240,6 +240,8 @@ def fit_embedding(
     # Training loop
     pbar = tqdm(range(n_iterations), disable=(not verbose), desc="t-SNE")
 
+    last_iteration = -1
+    last_loss = 0.0
     for iteration in pbar:
         # Phase transition
         if iteration == early_exaggeration_iterations:
@@ -267,6 +269,10 @@ def fit_embedding(
         if verbose:
             pbar.set_postfix({"loss": f"{loss.item():.4f}"})
 
+        # Track last iteration and loss for final callback
+        last_iteration = iteration
+        last_loss = loss.item()
+
         # Call callback every 10 iterations
         if callback is not None and iteration % 10 == 0:
             phase = "early" if iteration < early_exaggeration_iterations else "main"
@@ -275,5 +281,11 @@ def fit_embedding(
                 if verbose:
                     print("\nTraining stopped by callback")
                 break
+
+    # Call callback one final time if the last iteration wasn't a multiple of 10
+    # This ensures the UI gets the final state when training completes
+    if callback is not None and last_iteration >= 0 and last_iteration % 10 != 0:
+        phase = "early" if last_iteration < early_exaggeration_iterations else "main"
+        callback(last_iteration, last_loss, model, phase)
 
     return model
