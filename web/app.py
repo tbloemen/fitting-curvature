@@ -80,9 +80,8 @@ def create_app():
                                 loss_chart.create()
 
                         # Connect config editor projection changes to embedding plot
-                        config_editor.inputs["spherical_projection"].on(
-                            "update:model-value",
-                            lambda e: embedding_plot.set_projection(e.args),
+                        config_editor.inputs["spherical_projection"].on_value_change(
+                            lambda e: embedding_plot.set_projection(e.value),
                         )
 
                         # Instructions
