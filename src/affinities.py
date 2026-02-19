@@ -88,6 +88,7 @@ def compute_perplexity_affinities(
     data: Tensor,
     perplexity: float = 30.0,
     verbose: bool = False,
+    precomputed_squared_distances: Tensor | None = None,
 ) -> Tensor:
     """
     Compute symmetric perplexity-based affinities for t-SNE.
@@ -123,13 +124,20 @@ def compute_perplexity_affinities(
     k = min(n_points - 1, int(3 * perplexity + 1))
 
     if verbose:
-        print(f"Computing affinities with perplexity={perplexity}, using k={k} neighbors")
+        print(
+            f"Computing affinities with perplexity={perplexity}, using k={k} neighbors"
+        )
 
     # Compute all pairwise squared distances
-    # Using ||x - y||^2 = ||x||^2 + ||y||^2 - 2<x,y>
-    squared_norms = (data**2).sum(dim=1, keepdim=True)
-    squared_distances = squared_norms + squared_norms.t() - 2 * torch.mm(data, data.t())
-    squared_distances = torch.clamp(squared_distances, min=0.0)
+    if precomputed_squared_distances is not None:
+        squared_distances = precomputed_squared_distances.to(device)
+    else:
+        # Using ||x - y||^2 = ||x||^2 + ||y||^2 - 2<x,y>
+        squared_norms = (data**2).sum(dim=1, keepdim=True)
+        squared_distances = (
+            squared_norms + squared_norms.t() - 2 * torch.mm(data, data.t())
+        )
+        squared_distances = torch.clamp(squared_distances, min=0.0)
 
     # Set diagonal to large value to exclude self
     squared_distances.fill_diagonal_(float("inf"))

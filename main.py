@@ -45,11 +45,13 @@ def main():
         print(f"GPU: {torch.cuda.get_device_name(0)}")
 
     # Load data
-    X, y = load_raw_data(data_config["dataset"])
     n_samples = data_config["n_samples"]
-    if n_samples > 0:
+    X, y, D = load_raw_data(data_config["dataset"], n_samples=n_samples)
+    if n_samples > 0 and n_samples < len(X):
         X = X[:n_samples]
         y = y[:n_samples]
+        if D is not None:
+            D = D[:n_samples, :n_samples]
     X = X.to(device)
     print(f"\nLoaded {len(X)} samples with {X.shape[1]} features")
 
@@ -66,7 +68,13 @@ def main():
 
     # Normalize data so mean pairwise distance = 1
     print("\nNormalizing data...")
-    X = normalize_data(X, verbose=True)
+    if D is not None:
+        mask = ~torch.eye(D.shape[0], dtype=torch.bool)
+        mean_d = D[mask].mean()
+        D = D / mean_d
+        print(f"Normalized precomputed distances (divided by {mean_d:.4f})")
+    else:
+        X = normalize_data(X, verbose=True)
 
     # Get initialization scale
     init_scale_value = hyperparam_config["init_scale"]
@@ -116,6 +124,7 @@ def main():
             init_method=init_method,
             init_scale=init_scale,
             verbose=True,
+            precomputed_distances=D,
         )
 
         # Get the learned embeddings (move to CPU for visualization)

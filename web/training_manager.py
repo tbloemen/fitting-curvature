@@ -53,13 +53,15 @@ class TrainingManager:
         self.executor = ThreadPoolExecutor(max_workers=1)
         self._stop_requested = False
         self._training_thread: Optional[threading.Thread] = None
-        self._data_cache: Optional[tuple[torch.Tensor, torch.Tensor]] = None
+        self._data_cache: Optional[
+            tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor]]
+        ] = None
         self._lock = threading.Lock()
         self._observers: list = []  # Callbacks to notify on state updates
 
     def load_data(
         self, dataset: str, n_samples: int = -1
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
         """
         Load and cache dataset.
 
@@ -72,19 +74,28 @@ class TrainingManager:
 
         Returns
         -------
-        tuple[torch.Tensor, torch.Tensor]
-            (data, labels)
+        tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor]]
+            (data, labels, precomputed_distances)
         """
         if self._data_cache is None:
-            data, labels = load_raw_data(dataset)
-            data = normalize_data(data)
+            data, labels, D = load_raw_data(dataset, n_samples=n_samples)
 
             if n_samples > 0 and n_samples < len(data):
                 indices = torch.randperm(len(data))[:n_samples]
                 data = data[indices]
                 labels = labels[indices]
+                if D is not None:
+                    D = D[indices][:, indices]
 
-            self._data_cache = (data, labels)
+            # Normalize
+            if D is not None:
+                mask = ~torch.eye(D.shape[0], dtype=torch.bool)
+                mean_d = D[mask].mean()
+                D = D / mean_d
+            else:
+                data = normalize_data(data)
+
+            self._data_cache = (data, labels, D)
 
         return self._data_cache
 
@@ -219,7 +230,7 @@ class TrainingManager:
             # Load data
             dataset = config["data"]["dataset"]
             n_samples = config["data"]["n_samples"]
-            data, labels = self.load_data(dataset, n_samples)
+            data, labels, precomputed_distances = self.load_data(dataset, n_samples)
 
             # Store labels for visualization
             with self._lock:
@@ -289,6 +300,7 @@ class TrainingManager:
                 init_scale=init_scale,
                 verbose=False,  # Disable console output
                 callback=self._training_callback,
+                precomputed_distances=precomputed_distances,
             )
 
             # Training completed

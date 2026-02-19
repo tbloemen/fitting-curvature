@@ -3,8 +3,10 @@
 import tomllib
 from pathlib import Path
 from typing import Any, Dict
+
 import toml
 
+from src.load_data import VALID_DATASETS
 
 DEFAULT_CONFIG = {
     "data": {
@@ -98,8 +100,8 @@ def validate_config(config: Dict[str, Any]) -> tuple[bool, str]:
         if "data" not in config:
             return False, "Missing 'data' section"
 
-        if config["data"].get("dataset") not in ["mnist"]:
-            return False, "Invalid dataset. Must be 'mnist'"
+        if config["data"].get("dataset") not in VALID_DATASETS:
+            return False, f"Invalid dataset. Must be one of {VALID_DATASETS}"
 
         n_samples = config["data"].get("n_samples", -1)
         if not isinstance(n_samples, int) or (n_samples < 1 and n_samples != -1):
@@ -136,7 +138,9 @@ def validate_config(config: Dict[str, Any]) -> tuple[bool, str]:
             return False, "early_exaggeration_factor must be a positive number"
 
         momentum_early = config["embedding"].get("momentum_early")
-        if not isinstance(momentum_early, (int, float)) or not (0 <= momentum_early <= 1):
+        if not isinstance(momentum_early, (int, float)) or not (
+            0 <= momentum_early <= 1
+        ):
             return False, "momentum_early must be between 0 and 1"
 
         momentum_main = config["embedding"].get("momentum_main")
@@ -173,7 +177,12 @@ def validate_config(config: Dict[str, Any]) -> tuple[bool, str]:
         # Validate visualization section
         if "visualization" in config:
             proj = config["visualization"].get("spherical_projection")
-            valid_projections = ["stereographic", "azimuthal_equidistant", "orthographic", "direct"]
+            valid_projections = [
+                "stereographic",
+                "azimuthal_equidistant",
+                "orthographic",
+                "direct",
+            ]
             if proj not in valid_projections:
                 return False, f"spherical_projection must be one of {valid_projections}"
 

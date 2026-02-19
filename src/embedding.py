@@ -1,8 +1,9 @@
+from typing import Callable, Optional
+
 import torch
 import torch.nn as nn
 from torch import Tensor
 from tqdm import tqdm
-from typing import Optional, Callable
 
 from src.affinities import compute_perplexity_affinities
 from src.kernels import compute_q_matrix
@@ -126,7 +127,10 @@ def fit_embedding(
     init_method: InitMethod = InitMethod.PCA,
     init_scale: float = 0.0001,
     verbose: bool = True,
-    callback: Optional[Callable[[int, float, 'ConstantCurvatureEmbedding', str], bool]] = None,
+    callback: Optional[
+        Callable[[int, float, "ConstantCurvatureEmbedding", str], bool]
+    ] = None,
+    precomputed_distances: Optional[Tensor] = None,
 ) -> ConstantCurvatureEmbedding:
     """
     Fit a t-SNE embedding in constant curvature space.
@@ -204,7 +208,15 @@ def fit_embedding(
     # Step 1: Compute high-dimensional affinities
     if verbose:
         print("Computing high-dimensional affinities...")
-    V = compute_perplexity_affinities(data, perplexity=perplexity, verbose=verbose)
+    precomputed_sq = (
+        precomputed_distances**2 if precomputed_distances is not None else None
+    )
+    V = compute_perplexity_affinities(
+        data,
+        perplexity=perplexity,
+        verbose=verbose,
+        precomputed_squared_distances=precomputed_sq,
+    )
     V = V.to(device)
 
     # Step 2: Initialize embedding

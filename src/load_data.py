@@ -1,8 +1,13 @@
 from enum import Enum
 
 import torch
+from torch import Tensor
 from torchvision import datasets
 from torchvision.transforms import ToTensor
+
+from src.synthetic_data import SYNTHETIC_DATASETS, load_synthetic
+
+VALID_DATASETS = ["mnist"] + list(SYNTHETIC_DATASETS.keys())
 
 
 class DatasetKind(Enum):
@@ -32,10 +37,23 @@ def load_mnist(kind: DatasetKind) -> tuple[torch.Tensor, torch.Tensor]:
     return torch.concat((train_x, test_x)), torch.concat((train_y, test_y))
 
 
-def load_raw_data(dataset: str, kind=DatasetKind.ALL):
+def load_raw_data(
+    dataset: str, kind=DatasetKind.ALL, n_samples: int = 500
+) -> tuple[Tensor, Tensor, Tensor | None]:
+    """Load a dataset by name.
+
+    Returns
+    -------
+    tuple[Tensor, Tensor, Tensor | None]
+        (X, y, D) where D is a precomputed geodesic distance matrix or None.
+    """
     stripped_dataset = dataset.lower().strip()
-    # MNIST only for now.
+
     if stripped_dataset == "mnist":
-        return load_mnist(kind)
+        X, y = load_mnist(kind)
+        return X, y, None
+
+    if stripped_dataset in SYNTHETIC_DATASETS:
+        return load_synthetic(stripped_dataset, n_samples)
 
     raise ValueError("Dataset not recognised: ", stripped_dataset)
