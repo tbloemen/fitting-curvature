@@ -4,6 +4,7 @@ from typing import Any, Callable, Dict
 
 from nicegui import ui
 
+from src.load_data import VALID_DATASETS
 from web.config_manager import (get_default_config, load_config, save_config,
                                 validate_config)
 
@@ -41,7 +42,7 @@ class ConfigEditor:
                 with ui.column().classes("gap-2 p-2"):
                     self.inputs["dataset"] = ui.select(
                         label="Dataset",
-                        options=["mnist"],
+                        options=VALID_DATASETS,
                         value=self.config["data"]["dataset"],
                     ).classes("w-full")
 
@@ -161,7 +162,9 @@ class ConfigEditor:
                         value=current_curvature,
                         step=0.1,
                     ).classes("w-full")
-                    ui.label("k < 0: Hyperbolic | k = 0: Euclidean | k > 0: Spherical").classes("text-xs text-gray-500")
+                    ui.label(
+                        "k < 0: Hyperbolic | k = 0: Euclidean | k > 0: Spherical"
+                    ).classes("text-xs text-gray-500")
 
             # Visualization section
             with ui.expansion("Visualization", icon="visibility", value=True).classes(
@@ -178,7 +181,9 @@ class ConfigEditor:
                         },
                         value=self.config["visualization"]["spherical_projection"],
                     ).classes("w-full")
-                    ui.label("Note: This setting only affects spherical embeddings (k > 0)").classes("text-xs text-gray-500")
+                    ui.label(
+                        "Note: This setting only affects spherical embeddings (k > 0)"
+                    ).classes("text-xs text-gray-500")
 
             # Action buttons
             with ui.row().classes("w-full gap-2 mt-4"):

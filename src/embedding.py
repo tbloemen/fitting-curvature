@@ -1,8 +1,9 @@
+from typing import Callable, Optional
+
 import torch
 import torch.nn as nn
 from torch import Tensor
 from tqdm import tqdm
-from typing import Optional, Callable
 
 from src.affinities import compute_perplexity_affinities
 from src.kernels import compute_q_matrix
@@ -126,7 +127,10 @@ def fit_embedding(
     init_method: InitMethod = InitMethod.PCA,
     init_scale: float = 0.0001,
     verbose: bool = True,
-    callback: Optional[Callable[[int, float, 'ConstantCurvatureEmbedding', str], bool]] = None,
+    callback: Optional[
+        Callable[[int, float, "ConstantCurvatureEmbedding", str], bool]
+    ] = None,
+    precomputed_distances: Optional[Tensor] = None,
 ) -> ConstantCurvatureEmbedding:
     """
     Fit a t-SNE embedding in constant curvature space.
@@ -204,7 +208,15 @@ def fit_embedding(
     # Step 1: Compute high-dimensional affinities
     if verbose:
         print("Computing high-dimensional affinities...")
-    V = compute_perplexity_affinities(data, perplexity=perplexity, verbose=verbose)
+    precomputed_sq = (
+        precomputed_distances**2 if precomputed_distances is not None else None
+    )
+    V = compute_perplexity_affinities(
+        data,
+        perplexity=perplexity,
+        verbose=verbose,
+        precomputed_squared_distances=precomputed_sq,
+    )
     V = V.to(device)
 
     # Step 2: Initialize embedding
@@ -273,8 +285,8 @@ def fit_embedding(
         last_iteration = iteration
         last_loss = loss.item()
 
-        # Call callback every 10 iterations
-        if callback is not None and iteration % 10 == 0:
+        # Call callback
+        if callback is not None:
             phase = "early" if iteration < early_exaggeration_iterations else "main"
             should_continue = callback(iteration, loss.item(), model, phase)
             if not should_continue:
@@ -282,9 +294,9 @@ def fit_embedding(
                     print("\nTraining stopped by callback")
                 break
 
-    # Call callback one final time if the last iteration wasn't a multiple of 10
+    # Call callback one final time
     # This ensures the UI gets the final state when training completes
-    if callback is not None and last_iteration >= 0 and last_iteration % 10 != 0:
+    if callback is not None and last_iteration >= 0:
         phase = "early" if last_iteration < early_exaggeration_iterations else "main"
         callback(last_iteration, last_loss, model, phase)
 

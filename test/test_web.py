@@ -14,15 +14,9 @@ import numpy as np
 import pytest
 import torch
 
-from web.config_manager import (
-    DEFAULT_CONFIG,
-    get_default_config,
-    load_config,
-    save_config,
-    validate_config,
-)
+from web.config_manager import (DEFAULT_CONFIG, get_default_config,
+                                load_config, save_config, validate_config)
 from web.training_manager import TrainingManager, TrainingState, TrainingStatus
-
 
 # --- Config Manager Tests ---
 
@@ -416,16 +410,20 @@ def test_training_manager_load_data(training_manager):
     mock_data = torch.randn(100, 784)
     mock_labels = torch.randint(0, 10, (100,))
 
-    with patch("web.training_manager.load_raw_data", return_value=(mock_data, mock_labels)):
+    with patch(
+        "web.training_manager.load_raw_data",
+        return_value=(mock_data, mock_labels, None),
+    ):
         with patch("web.training_manager.normalize_data", side_effect=lambda x: x):
             # Load data
-            data, labels = training_manager.load_data("mnist", n_samples=-1)
+            data, labels, D = training_manager.load_data("mnist", n_samples=-1)
 
             assert data.shape == (100, 784)
             assert labels.shape == (100,)
+            assert D is None
 
             # Load again - should use cache
-            data2, labels2 = training_manager.load_data("mnist", n_samples=-1)
+            data2, labels2, D2 = training_manager.load_data("mnist", n_samples=-1)
 
             assert torch.equal(data, data2)
             assert torch.equal(labels, labels2)
@@ -436,10 +434,13 @@ def test_training_manager_load_data_with_sampling(training_manager):
     mock_data = torch.randn(1000, 784)
     mock_labels = torch.randint(0, 10, (1000,))
 
-    with patch("web.training_manager.load_raw_data", return_value=(mock_data, mock_labels)):
+    with patch(
+        "web.training_manager.load_raw_data",
+        return_value=(mock_data, mock_labels, None),
+    ):
         with patch("web.training_manager.normalize_data", side_effect=lambda x: x):
             # Load with sampling
-            data, labels = training_manager.load_data("mnist", n_samples=100)
+            data, labels, D = training_manager.load_data("mnist", n_samples=100)
 
             assert data.shape == (100, 784)
             assert labels.shape == (100,)
@@ -450,7 +451,10 @@ def test_training_manager_clear_cache(training_manager):
     mock_data = torch.randn(100, 784)
     mock_labels = torch.randint(0, 10, (100,))
 
-    with patch("web.training_manager.load_raw_data", return_value=(mock_data, mock_labels)):
+    with patch(
+        "web.training_manager.load_raw_data",
+        return_value=(mock_data, mock_labels, None),
+    ):
         with patch("web.training_manager.normalize_data", side_effect=lambda x: x):
             # Load data to populate cache
             training_manager.load_data("mnist")
