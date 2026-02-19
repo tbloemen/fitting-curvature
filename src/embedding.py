@@ -285,8 +285,8 @@ def fit_embedding(
         last_iteration = iteration
         last_loss = loss.item()
 
-        # Call callback every 10 iterations
-        if callback is not None and iteration % 10 == 0:
+        # Call callback
+        if callback is not None:
             phase = "early" if iteration < early_exaggeration_iterations else "main"
             should_continue = callback(iteration, loss.item(), model, phase)
             if not should_continue:
@@ -294,9 +294,9 @@ def fit_embedding(
                     print("\nTraining stopped by callback")
                 break
 
-    # Call callback one final time if the last iteration wasn't a multiple of 10
+    # Call callback one final time
     # This ensures the UI gets the final state when training completes
-    if callback is not None and last_iteration >= 0 and last_iteration % 10 != 0:
+    if callback is not None and last_iteration >= 0:
         phase = "early" if last_iteration < early_exaggeration_iterations else "main"
         callback(last_iteration, last_loss, model, phase)
 
