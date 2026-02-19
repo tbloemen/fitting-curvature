@@ -72,12 +72,26 @@
         console.log('Canvas appended to container');
         console.log('Canvas element:', renderer.domElement);
 
+        // Create circle texture for round points
+        const circleCanvas = document.createElement('canvas');
+        circleCanvas.width = 64;
+        circleCanvas.height = 64;
+        const ctx = circleCanvas.getContext('2d');
+        ctx.beginPath();
+        ctx.arc(32, 32, 30, 0, 2 * Math.PI);
+        ctx.fillStyle = 'white';
+        ctx.fill();
+        const circleTexture = new THREE.CanvasTexture(circleCanvas);
+
         // Points geometry
         const pointsGeometry = new THREE.BufferGeometry();
         const pointsMaterial = new THREE.PointsMaterial({
             size: 8,
             vertexColors: true,
-            sizeAttenuation: false
+            sizeAttenuation: false,
+            map: circleTexture,
+            alphaTest: 0.5,
+            transparent: true
         });
         const pointsMesh = new THREE.Points(pointsGeometry, pointsMaterial);
         scene.add(pointsMesh);
