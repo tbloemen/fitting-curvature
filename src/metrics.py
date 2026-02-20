@@ -434,6 +434,7 @@ def compute_all_metrics(
 
     # --- D. Perceptual evaluation ---
     if has_labels:
+        assert labels is not None
         results["cluster_interpretability"] = cluster_interpretability(
             embedded_distances, labels
         )
