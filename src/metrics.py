@@ -3,7 +3,6 @@ from typing import Dict, Optional, Tuple
 import numpy as np
 from scipy.spatial import ConvexHull
 from scipy.spatial.distance import pdist, squareform
-from scipy.stats import spearmanr
 from sklearn.manifold import trustworthiness
 from sklearn.metrics import silhouette_score
 
@@ -92,7 +91,7 @@ def geodesic_distortion(
     embedded_distances: np.ndarray,
 ) -> float:
     """
-    Spearman rank correlation between high-dim and embedded pairwise distances.
+    Distortion between high-dim and embedded pairwise distances as presented by Gu et al (2019).
 
     Parameters
     ----------
@@ -104,14 +103,14 @@ def geodesic_distortion(
     Returns
     -------
     float
-        Spearman correlation (−1 to 1, higher is better)
+        Relative distortion (0 to infinity, lower is better)
     """
     # Extract upper triangle (exclude diagonal)
     idx = np.triu_indices(high_dim_distances.shape[0], k=1)
     high_flat = high_dim_distances[idx]
     embed_flat = embedded_distances[idx]
-    corr, _ = spearmanr(high_flat, embed_flat)
-    return float(corr)
+    distortion = np.sum(np.abs((embed_flat / high_flat) ** 2 - 1)) / len(embed_flat)
+    return float(distortion)
 
 
 def volume_distortion(
@@ -295,104 +294,6 @@ def cluster_interpretability(
     return float(silhouette_score(embedded_distances, labels, metric="precomputed"))
 
 
-def over_smoothing(
-    embedded_distances: np.ndarray,
-    labels: np.ndarray,
-) -> float:
-    """
-    Ratio of mean inter-cluster to mean intra-cluster distance.
-
-    Low values indicate over-smoothing (clusters collapsed together).
-
-    Parameters
-    ----------
-    embedded_distances : np.ndarray, shape (n, n)
-    labels : np.ndarray, shape (n,)
-
-    Returns
-    -------
-    float
-        Inter/intra distance ratio. Higher = better separation.
-    """
-    unique_labels = np.unique(labels)
-    if len(unique_labels) < 2:
-        return 0.0
-
-    intra_dists = []
-    inter_dists = []
-    for lbl in unique_labels:
-        mask = labels == lbl
-        idx = np.where(mask)[0]
-        # Intra-cluster
-        if len(idx) > 1:
-            pairs = embedded_distances[np.ix_(idx, idx)]
-            triu = pairs[np.triu_indices(len(idx), k=1)]
-            intra_dists.extend(triu.tolist())
-        # Inter-cluster
-        other_idx = np.where(~mask)[0]
-        if len(other_idx) > 0 and len(idx) > 0:
-            cross = embedded_distances[np.ix_(idx, other_idx)]
-            inter_dists.extend(cross.ravel().tolist())
-
-    mean_intra = np.mean(intra_dists) if intra_dists else 1e-10
-    mean_inter = np.mean(inter_dists) if inter_dists else 0.0
-
-    if mean_intra < 1e-10:
-        return float(mean_inter) if mean_inter > 0 else 0.0
-    return float(mean_inter / mean_intra)
-
-
-def false_structure(
-    high_dim_distances: np.ndarray,
-    embedded_distances: np.ndarray,
-    threshold_percentile: float = 10.0,
-) -> float:
-    """
-    Compare connected components at a distance threshold in both spaces.
-
-    Uses a threshold at the given percentile of the high-dim distance distribution.
-    Returns the absolute difference in number of connected components.
-
-    Parameters
-    ----------
-    high_dim_distances : np.ndarray, shape (n, n)
-    embedded_distances : np.ndarray, shape (n, n)
-    threshold_percentile : float
-        Percentile of high-dim distances to use as threshold
-
-    Returns
-    -------
-    float
-        Absolute difference in number of connected components.
-        0 = same structure, higher = more false structure.
-    """
-    idx = np.triu_indices(high_dim_distances.shape[0], k=1)
-    threshold = np.percentile(high_dim_distances[idx], threshold_percentile)
-
-    def count_components(dist_matrix, thresh):
-        n = dist_matrix.shape[0]
-        adj = dist_matrix <= thresh
-        np.fill_diagonal(adj, False)
-        visited = np.zeros(n, dtype=bool)
-        components = 0
-        for i in range(n):
-            if not visited[i]:
-                components += 1
-                stack = [i]
-                while stack:
-                    node = stack.pop()
-                    if not visited[node]:
-                        visited[node] = True
-                        neighbors = np.where(adj[node] & ~visited)[0]
-                        stack.extend(neighbors.tolist())
-        return components
-
-    cc_high = count_components(high_dim_distances, threshold)
-    cc_embed = count_components(embedded_distances, threshold)
-
-    return float(abs(cc_high - cc_embed))
-
-
 # ---------------------------------------------------------------------------
 # Aggregated metric computation
 # ---------------------------------------------------------------------------
@@ -531,16 +432,8 @@ def compute_all_metrics(
         results["cluster_interpretability"] = cluster_interpretability(
             embedded_distances, labels
         )
-        results["over_smoothing"] = over_smoothing(embedded_distances, labels)
     else:
         results["cluster_interpretability"] = None
-        results["over_smoothing"] = None
 
-    if has_high_dist:
-        results["false_structure"] = false_structure(
-            high_dim_distances, embedded_distances
-        )
-    else:
-        results["false_structure"] = None
-
+    print(results)
     return results
