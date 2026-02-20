@@ -1,173 +1,266 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Constant Curvature Embeddings</title>
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/style.css" />
     <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-</head>
-<body>
+  </head>
+  <body>
     <header>
-        <h1>Constant Curvature Embeddings</h1>
-        <span class="subtitle">Interactive t-SNE Visualization</span>
+      <h1>Constant Curvature Embeddings</h1>
+      <span class="subtitle">Interactive t-SNE Visualization</span>
     </header>
 
     <main>
-        <!-- Left sidebar: config -->
-        <aside id="config-panel">
-            <h2>Configuration</h2>
+      <!-- Left sidebar: config -->
+      <aside id="config-panel">
+        <h2>Configuration</h2>
 
-            <details open>
-                <summary>Data</summary>
-                <div class="form-group">
-                    <label for="cfg-dataset">Dataset</label>
-                    <select id="cfg-dataset"></select>
-                </div>
-                <div class="form-group">
-                    <label for="cfg-n-samples">Samples (-1 = all)</label>
-                    <input type="number" id="cfg-n-samples" value="1000" step="100" min="-1">
-                </div>
-            </details>
+        <details open>
+          <summary>Data</summary>
+          <div class="form-group">
+            <label for="cfg-dataset">Dataset</label>
+            <select id="cfg-dataset"></select>
+          </div>
+          <div class="form-group">
+            <label for="cfg-n-samples">Samples (-1 = all)</label>
+            <input
+              type="number"
+              id="cfg-n-samples"
+              value="1000"
+              step="100"
+              min="-1"
+            />
+          </div>
+        </details>
 
-            <details open>
-                <summary>Embedding Parameters</summary>
-                <div class="form-group">
-                    <label for="cfg-embed-dim">Embedding dimension</label>
-                    <input type="number" id="cfg-embed-dim" value="2" min="1" max="10" step="1">
-                </div>
-                <div class="form-group">
-                    <label for="cfg-n-iterations">Iterations</label>
-                    <input type="number" id="cfg-n-iterations" value="1000" min="1" step="100">
-                </div>
-                <div class="form-group">
-                    <label for="cfg-init-method">Init method</label>
-                    <select id="cfg-init-method">
-                        <option value="pca">PCA</option>
-                        <option value="random">Random</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="cfg-perplexity">Perplexity</label>
-                    <input type="number" id="cfg-perplexity" value="30" min="5" max="100" step="5">
-                </div>
-                <div class="form-group">
-                    <label for="cfg-early-exag-iters">Early exag. iterations</label>
-                    <input type="number" id="cfg-early-exag-iters" value="250" min="0" step="50">
-                </div>
-                <div class="form-group">
-                    <label for="cfg-early-exag-factor">Early exag. factor</label>
-                    <input type="number" id="cfg-early-exag-factor" value="12" min="1" step="1">
-                </div>
-                <div class="form-group">
-                    <label for="cfg-momentum-early">Momentum (early)</label>
-                    <input type="number" id="cfg-momentum-early" value="0.5" min="0" max="1" step="0.1">
-                </div>
-                <div class="form-group">
-                    <label for="cfg-momentum-main">Momentum (main)</label>
-                    <input type="number" id="cfg-momentum-main" value="0.8" min="0" max="1" step="0.1">
-                </div>
-            </details>
+        <details open>
+          <summary>Embedding Parameters</summary>
+          <div class="form-group">
+            <label for="cfg-embed-dim">Embedding dimension</label>
+            <input
+              type="number"
+              id="cfg-embed-dim"
+              value="2"
+              min="1"
+              max="10"
+              step="1"
+            />
+          </div>
+          <div class="form-group">
+            <label for="cfg-n-iterations">Iterations</label>
+            <input
+              type="number"
+              id="cfg-n-iterations"
+              value="1000"
+              min="1"
+              step="100"
+            />
+          </div>
+          <div class="form-group">
+            <label for="cfg-init-method">Init method</label>
+            <select id="cfg-init-method">
+              <option value="pca">PCA</option>
+              <option value="random">Random</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="cfg-perplexity">Perplexity</label>
+            <input
+              type="number"
+              id="cfg-perplexity"
+              value="30"
+              min="5"
+              max="100"
+              step="5"
+            />
+          </div>
+          <div class="form-group">
+            <label for="cfg-early-exag-iters">Early exag. iterations</label>
+            <input
+              type="number"
+              id="cfg-early-exag-iters"
+              value="250"
+              min="0"
+              step="50"
+            />
+          </div>
+          <div class="form-group">
+            <label for="cfg-early-exag-factor">Early exag. factor</label>
+            <input
+              type="number"
+              id="cfg-early-exag-factor"
+              value="12"
+              min="1"
+              step="1"
+            />
+          </div>
+          <div class="form-group">
+            <label for="cfg-momentum-early">Momentum (early)</label>
+            <input
+              type="number"
+              id="cfg-momentum-early"
+              value="0.5"
+              min="0"
+              max="1"
+              step="0.1"
+            />
+          </div>
+          <div class="form-group">
+            <label for="cfg-momentum-main">Momentum (main)</label>
+            <input
+              type="number"
+              id="cfg-momentum-main"
+              value="0.8"
+              min="0"
+              max="1"
+              step="0.1"
+            />
+          </div>
+        </details>
 
-            <details>
-                <summary>Hyperparameters</summary>
-                <div class="form-group">
-                    <label for="cfg-learning-rate">Learning rate</label>
-                    <input type="number" id="cfg-learning-rate" value="200" min="0.1" step="10">
-                </div>
-                <div class="form-group">
-                    <label for="cfg-init-scale">Init scale ("auto" or number)</label>
-                    <input type="text" id="cfg-init-scale" value="auto">
-                </div>
-            </details>
+        <details>
+          <summary>Hyperparameters</summary>
+          <div class="form-group">
+            <label for="cfg-learning-rate">Learning rate</label>
+            <input
+              type="number"
+              id="cfg-learning-rate"
+              value="200"
+              min="0.1"
+              step="10"
+            />
+          </div>
+          <div class="form-group">
+            <label for="cfg-init-scale">Init scale ("auto" or number)</label>
+            <input type="text" id="cfg-init-scale" value="auto" />
+          </div>
+        </details>
 
-            <details open>
-                <summary>Experiments</summary>
-                <div class="form-group">
-                    <label for="cfg-curvature">Curvature</label>
-                    <input type="number" id="cfg-curvature" value="-1" step="0.1">
-                    <small>k &lt; 0: Hyperbolic | k = 0: Euclidean | k &gt; 0: Spherical</small>
-                </div>
-            </details>
+        <details open>
+          <summary>Experiments</summary>
+          <div class="form-group">
+            <label for="cfg-curvature">Curvature</label>
+            <input type="number" id="cfg-curvature" value="-1" step="0.1" />
+            <small
+              >k &lt; 0: Hyperbolic | k = 0: Euclidean | k &gt; 0:
+              Spherical</small
+            >
+          </div>
+        </details>
 
-            <details open>
-                <summary>Visualization</summary>
-                <div class="form-group">
-                    <label for="cfg-projection">Projection (spherical k &gt; 0)</label>
-                    <select id="cfg-projection">
-                        <option value="direct">Direct</option>
-                        <option value="stereographic">Stereographic</option>
-                        <option value="azimuthal_equidistant">Azimuthal Equidistant</option>
-                        <option value="orthographic">Orthographic</option>
-                    </select>
-                    <small>Only affects spherical embeddings (k &gt; 0)</small>
-                </div>
-            </details>
+        <details open>
+          <summary>Visualization</summary>
+          <div class="form-group">
+            <label for="cfg-projection">Projection (spherical k &gt; 0)</label>
+            <select id="cfg-projection">
+              <option value="direct">Direct</option>
+              <option value="stereographic">Stereographic</option>
+              <option value="azimuthal_equidistant">
+                Azimuthal Equidistant
+              </option>
+              <option value="orthographic">Orthographic</option>
+            </select>
+            <small>Only affects spherical embeddings (k &gt; 0)</small>
+          </div>
+        </details>
 
-            <div class="button-row">
-                <button id="btn-save" class="btn btn-primary">Save Configuration</button>
-                <button id="btn-reset" class="btn btn-secondary">Reset Defaults</button>
-            </div>
-        </aside>
+        <div class="button-row">
+          <button id="btn-save" class="btn btn-primary">
+            Save Configuration
+          </button>
+          <button id="btn-reset" class="btn btn-secondary">
+            Reset Defaults
+          </button>
+        </div>
+      </aside>
 
-        <!-- Right area: controls + viz -->
-        <section id="main-area">
-            <!-- Training controls -->
-            <div id="training-controls">
-                <h2>Training Control</h2>
-                <div class="control-row">
-                    <span class="label">Status:</span>
-                    <span id="status-label" class="status idle">Idle</span>
-                </div>
-                <div class="control-row">
-                    <button id="btn-start" class="btn btn-start">Start Training</button>
-                    <button id="btn-stop" class="btn btn-stop" disabled>Stop Training</button>
-                </div>
-                <div class="control-row">
-                    <span class="label">Progress:</span>
-                    <span id="iteration-label">0 / 0</span>
-                    <span id="phase-label"></span>
-                </div>
-                <div class="progress-bar-container">
-                    <div id="progress-bar" class="progress-bar" style="width: 0%"></div>
-                </div>
-                <div class="control-row">
-                    <span class="label">Loss:</span>
-                    <span id="loss-label">N/A</span>
-                </div>
-            </div>
+      <!-- Right area: controls + viz -->
+      <section id="main-area">
+        <!-- Training controls -->
+        <div id="training-controls">
+          <h2>Training Control</h2>
+          <div class="control-row">
+            <span class="label">Status:</span>
+            <span id="status-label" class="status idle">Idle</span>
+          </div>
+          <div class="control-row">
+            <button id="btn-start" class="btn btn-start">Start Training</button>
+            <button id="btn-stop" class="btn btn-stop" disabled>
+              Stop Training
+            </button>
+          </div>
+          <div class="control-row">
+            <span class="label">Progress:</span>
+            <span id="iteration-label">0 / 0</span>
+            <span id="phase-label"></span>
+          </div>
+          <div class="progress-bar-container">
+            <div id="progress-bar" class="progress-bar" style="width: 0%"></div>
+          </div>
+          <div class="control-row">
+            <span class="label">Loss:</span>
+            <span id="loss-label">N/A</span>
+          </div>
+        </div>
 
-            <hr>
+        <hr />
 
-            <h2>Visualizations</h2>
-            <div id="viz-row">
-                <div id="embedding-container"></div>
-                <div id="loss-chart-container"></div>
-            </div>
+        <h2>Visualizations</h2>
+        <div id="viz-row">
+          <div id="embedding-container"></div>
+          <div id="loss-chart-container"></div>
+        </div>
 
-            <!-- Instructions -->
-            <details id="instructions">
-                <summary>Instructions</summary>
-                <div class="instructions-content">
-                    <h3>How to Use</h3>
-                    <ol>
-                        <li><strong>Configure Settings</strong>: Use the left panel to adjust parameters</li>
-                        <li><strong>Save Configuration</strong>: Click "Save Configuration" to persist</li>
-                        <li><strong>Start Training</strong>: Click "Start Training" to begin</li>
-                        <li><strong>Monitor Progress</strong>: Watch the embedding plot and loss chart</li>
-                        <li><strong>Stop Training</strong>: Click "Stop Training" to halt early</li>
-                    </ol>
-                    <h3>Tips</h3>
-                    <ul>
-                        <li><strong>Quick Test</strong>: n_samples=100, n_iterations=100</li>
-                        <li><strong>Production</strong>: n_samples=1000-5000, n_iterations=1000</li>
-                        <li><strong>Perplexity</strong>: Typical values 5-50, default 30</li>
-                        <li><strong>Curvature</strong>: k=0 (Euclidean), k=-1 (hyperbolic), k=1 (spherical)</li>
-                    </ul>
-                </div>
-            </details>
-        </section>
+        <!-- Instructions -->
+        <details id="instructions">
+          <summary>Instructions</summary>
+          <div class="instructions-content">
+            <h3>How to Use</h3>
+            <ol>
+              <li>
+                <strong>Configure Settings</strong>: Use the left panel to
+                adjust parameters
+              </li>
+              <li>
+                <strong>Save Configuration</strong>: Click "Save Configuration"
+                to persist
+              </li>
+              <li>
+                <strong>Start Training</strong>: Click "Start Training" to begin
+              </li>
+              <li>
+                <strong>Monitor Progress</strong>: Watch the embedding plot and
+                loss chart
+              </li>
+              <li>
+                <strong>Stop Training</strong>: Click "Stop Training" to halt
+                early
+              </li>
+            </ol>
+            <h3>Tips</h3>
+            <ul>
+              <li>
+                <strong>Quick Test</strong>: n_samples=100, n_iterations=100
+              </li>
+              <li>
+                <strong>Production</strong>: n_samples=1000-5000,
+                n_iterations=1000
+              </li>
+              <li>
+                <strong>Perplexity</strong>: Typical values 5-50, default 30
+              </li>
+              <li>
+                <strong>Curvature</strong>: k=0 (Euclidean), k=-1 (hyperbolic),
+                k=1 (spherical)
+              </li>
+            </ul>
+          </div>
+        </details>
+      </section>
     </main>
 
     <footer>Constant Curvature Embeddings &mdash; Thesis Project</footer>
@@ -175,5 +268,5 @@
     <script src="/static/threejs_plot.js"></script>
     <script src="/static/loss_chart.js"></script>
     <script src="/static/app.js"></script>
-</body>
+  </body>
 </html>

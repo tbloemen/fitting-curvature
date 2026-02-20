@@ -5,6 +5,7 @@ Interactive web application for visualizing t-SNE embeddings in constant curvatu
 ## Quick Start
 
 **Start the web server:**
+
 ```bash
 uv run python -m web.app
 ```
@@ -56,11 +57,14 @@ web/
 ## Troubleshooting
 
 **Import errors:**
+
 - Make sure to run with `python -m web.app` from the project root
 - Do NOT run with `python web/app.py` (will cause import errors)
 
 **Port already in use:**
+
 - Change the port in `web/app.py` (default is 8080)
 
 **GPU memory issues:**
+
 - Reduce `n_samples` or set device to CPU
