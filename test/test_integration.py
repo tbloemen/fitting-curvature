@@ -244,7 +244,9 @@ def test_integration_manifold_constraints_preserved():
     spatial = embeddings_hyp[:, 1:]
     constraint = -(x0**2) + (spatial**2).sum(dim=1)
     expected = torch.ones_like(constraint) * (-1.0)
-    assert torch.allclose(constraint, expected, atol=1e-3), "Hyperboloid constraint violated"
+    assert torch.allclose(
+        constraint, expected, atol=1e-3
+    ), "Hyperboloid constraint violated"
 
     # Test spherical constraint
     model_sph = fit_embedding(
@@ -264,4 +266,6 @@ def test_integration_manifold_constraints_preserved():
     embeddings_sph = model_sph.get_embeddings()
     norms = (embeddings_sph**2).sum(dim=1)
     expected_norms = torch.ones_like(norms)
-    assert torch.allclose(norms, expected_norms, atol=1e-4), "Spherical constraint violated"
+    assert torch.allclose(
+        norms, expected_norms, atol=1e-4
+    ), "Spherical constraint violated"

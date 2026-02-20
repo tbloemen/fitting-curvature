@@ -89,8 +89,16 @@ def project_to_2d(
             theta = np.arccos(np.clip(-x0 / r, -1.0, 1.0))  # angle from south pole
 
             # Get spatial coordinates for azimuthal angle
-            spatial_i = X[:, i + 1] if i + 1 != pole_axis else X[:, i + 2 if i + 2 < X.shape[1] else 1]
-            spatial_j = X[:, j + 1] if j + 1 != pole_axis else X[:, j + 2 if j + 2 < X.shape[1] else 1]
+            spatial_i = (
+                X[:, i + 1]
+                if i + 1 != pole_axis
+                else X[:, i + 2 if i + 2 < X.shape[1] else 1]
+            )
+            spatial_j = (
+                X[:, j + 1]
+                if j + 1 != pole_axis
+                else X[:, j + 2 if j + 2 < X.shape[1] else 1]
+            )
 
             phi = np.arctan2(spatial_j, spatial_i)
 

@@ -233,7 +233,9 @@ def test_pca_initialization_scaling():
     # Points should be rescaled to have std ≈ init_scale
     # Allow some tolerance due to PCA projection
     points_std = model.points.std().item()
-    assert abs(points_std - init_scale) < 0.02, f"Expected std ≈ {init_scale}, got {points_std}"
+    assert (
+        abs(points_std - init_scale) < 0.02
+    ), f"Expected std ≈ {init_scale}, got {points_std}"
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")

@@ -4,16 +4,19 @@ import pytest
 import torch
 
 from src.load_data import load_raw_data
-from src.synthetic_data import (SYNTHETIC_DATASETS,
-                                generate_antipodal_clusters,
-                                generate_concentric_circles,
-                                generate_gaussian_blob,
-                                generate_hyperbolic_shells,
-                                generate_tree_structured,
-                                generate_uniform_grid,
-                                generate_uniform_hyperbolic,
-                                generate_uniform_sphere,
-                                generate_von_mises_fisher, load_synthetic)
+from src.synthetic_data import (
+    SYNTHETIC_DATASETS,
+    generate_antipodal_clusters,
+    generate_concentric_circles,
+    generate_gaussian_blob,
+    generate_hyperbolic_shells,
+    generate_tree_structured,
+    generate_uniform_grid,
+    generate_uniform_hyperbolic,
+    generate_uniform_sphere,
+    generate_von_mises_fisher,
+    load_synthetic,
+)
 
 EUCLIDEAN_GENERATORS = [
     generate_uniform_grid,

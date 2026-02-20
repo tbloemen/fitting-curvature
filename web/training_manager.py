@@ -2,10 +2,9 @@
 
 import threading
 import traceback
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 import numpy as np
 import torch
@@ -42,7 +41,6 @@ class TrainingState:
     error_message: str = ""
     loss_history: list = field(default_factory=list)
     model: Optional[ConstantCurvatureEmbedding] = None
-    version: int = 0  # Incremented each time embeddings are updated
 
 
 class TrainingManager:
@@ -50,33 +48,19 @@ class TrainingManager:
 
     def __init__(self):
         self.state = TrainingState()
-        self.executor = ThreadPoolExecutor(max_workers=1)
         self._stop_requested = False
         self._training_thread: Optional[threading.Thread] = None
         self._data_cache: Optional[
             tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor]]
         ] = None
         self._lock = threading.Lock()
-        self._observers: list = []  # Callbacks to notify on state updates
+        self._update_callback: Optional[Callable] = None
+        self._status_callback: Optional[Callable] = None
 
     def load_data(
         self, dataset: str, n_samples: int = -1
     ) -> tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
-        """
-        Load and cache dataset.
-
-        Parameters
-        ----------
-        dataset : str
-            Dataset name (e.g., "mnist")
-        n_samples : int
-            Number of samples to use (-1 for all)
-
-        Returns
-        -------
-        tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor]]
-            (data, labels, precomputed_distances)
-        """
+        """Load and cache dataset."""
         if self._data_cache is None:
             data, labels, D = load_raw_data(dataset, n_samples=n_samples)
 
@@ -103,97 +87,46 @@ class TrainingManager:
         """Clear the data cache."""
         self._data_cache = None
 
-    def add_observer(self, callback):
-        """
-        Add an observer callback that will be notified on state updates.
-
-        Parameters
-        ----------
-        callback : callable
-            Function to call when state is updated (no arguments)
-        """
-        if callback not in self._observers:
-            self._observers.append(callback)
-
-    def remove_observer(self, callback):
-        """
-        Remove an observer callback.
-
-        Parameters
-        ----------
-        callback : callable
-            Function to remove from observers
-        """
-        if callback in self._observers:
-            self._observers.remove(callback)
-
-    def _notify_observers(self):
-        """Notify all registered observers of state update."""
-        for callback in self._observers:
-            try:
-                callback()
-            except Exception as e:
-                print(f"Error in observer callback: {e}")
-
     def _training_callback(
         self, iteration: int, loss: float, model: ConstantCurvatureEmbedding, phase: str
     ) -> bool:
-        """
-        Callback called during training.
-
-        Parameters
-        ----------
-        iteration : int
-            Current iteration
-        loss : float
-            Current loss value
-        model : ConstantCurvatureEmbedding
-            Current embedding model
-        phase : str
-            Current phase ("early" or "main")
-
-        Returns
-        -------
-        bool
-            True to continue training, False to stop
-        """
+        """Callback called during training."""
         with self._lock:
-            # Check if stop was requested
             if self._stop_requested:
                 return False
 
-            # Update state
             self.state.iteration = iteration
             self.state.loss = loss
             self.state.phase = phase
             self.state.model = model
 
-            # Store embeddings (move to CPU to save GPU memory)
+            # Store embeddings (move to CPU)
             embeddings = model.points.detach().cpu().numpy()
             self.state.embeddings = embeddings
 
-            # Track loss history
             self.state.loss_history.append((iteration, loss))
 
-            # Increment version to signal UI update
-            self.state.version += 1
-
-        # Notify observers outside the lock to avoid potential deadlocks
-        self._notify_observers()
+        # Push update to WebSocket clients
+        if self._update_callback:
+            try:
+                self._update_callback(iteration, loss, model, phase, self.state)
+            except Exception as e:
+                print(f"Error in update callback: {e}")
 
         return True
 
-    def start_training(self, config: Dict[str, Any]) -> None:
-        """
-        Start training in background thread.
-
-        Parameters
-        ----------
-        config : Dict[str, Any]
-            Configuration dictionary
-        """
+    def start_training(
+        self,
+        config: Dict[str, Any],
+        update_callback: Optional[Callable] = None,
+        status_callback: Optional[Callable] = None,
+    ) -> None:
+        """Start training in background thread."""
         if self.state.status == TrainingStatus.RUNNING:
             raise RuntimeError("Training is already running")
+
+        self._update_callback = update_callback
+        self._status_callback = status_callback
 
         # Reset state
         with self._lock:
@@ -205,34 +138,32 @@ class TrainingManager:
             self.state.loss_history = []
             self.state.max_iterations = config["embedding"]["n_iterations"]
 
-        # Start training in executor
         self._training_thread = threading.Thread(
             target=self._run_training, args=(config,), daemon=True
         )
         self._training_thread.start()
 
-    def _run_training(self, config: Dict[str, Any]) -> None:
-        """
-        Run training (executed in background thread).
+    def _notify_status(self, status: str, error_message: str = ""):
+        """Notify status change via callback."""
+        if self._status_callback:
+            try:
+                self._status_callback(status, error_message)
+            except Exception as e:
+                print(f"Error in status callback: {e}")
 
-        Parameters
-        ----------
-        config : Dict[str, Any]
-            Configuration dictionary
-        """
+    def _run_training(self, config: Dict[str, Any]) -> None:
+        """Run training (executed in background thread)."""
         try:
-            # Set precomputing status
             with self._lock:
                 self.state.status = TrainingStatus.PRECOMPUTING
                 self.state.phase = "precomputing"
-            self._notify_observers()
+            self._notify_status("precomputing")
 
             # Load data
             dataset = config["data"]["dataset"]
             n_samples = config["data"]["n_samples"]
             data, labels, precomputed_distances = self.load_data(dataset, n_samples)
 
-            # Store labels for visualization
             with self._lock:
                 self.state.labels = labels.cpu().numpy()
 
@@ -249,7 +180,6 @@ class TrainingManager:
             momentum_early = config["embedding"]["momentum_early"]
             momentum_main = config["embedding"]["momentum_main"]
 
-            # Get single curvature (web interface runs one at a time)
             curvatures = config["experiments"]["curvatures"]
             if len(curvatures) == 0:
                 raise ValueError("No curvatures specified")
@@ -274,16 +204,13 @@ class TrainingManager:
             else:
                 init_scale = float(init_scale_config)
 
-            # Determine device
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-            # Update status to running after precomputation
             with self._lock:
                 self.state.status = TrainingStatus.RUNNING
                 self.state.phase = "training"
-            self._notify_observers()
+            self._notify_status("running")
 
-            # Run embedding with callback
             model = fit_embedding(
                 data=data,
                 embed_dim=embed_dim,
@@ -298,37 +225,39 @@ class TrainingManager:
                 momentum_main=momentum_main,
                 init_method=init_method,
                 init_scale=init_scale,
-                verbose=False,  # Disable console output
+                verbose=False,
                 callback=self._training_callback,
                 precomputed_distances=precomputed_distances,
             )
 
-            # Training completed
             with self._lock:
                 if self._stop_requested:
                     self.state.status = TrainingStatus.STOPPED
+                    self._notify_status("stopped")
                 else:
                     self.state.status = TrainingStatus.COMPLETED
                     self.state.model = model
-                    # Store final embeddings
                     self.state.embeddings = model.points.detach().cpu().numpy()
+                    self._notify_status("completed")
 
-            # Clear GPU cache
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
 
         except Exception as e:
-            # Handle errors
             with self._lock:
                 self.state.status = TrainingStatus.ERROR
                 self.state.error_message = str(e)
+            self._notify_status("error", str(e))
             print(f"Training error: {e}")
             traceback.print_exc()
 
     def stop_training(self) -> None:
         """Request training to stop."""
         with self._lock:
-            if self.state.status == TrainingStatus.RUNNING:
+            if self.state.status in (
+                TrainingStatus.RUNNING,
+                TrainingStatus.PRECOMPUTING,
+            ):
                 self._stop_requested = True
 
     def get_state(self) -> TrainingState:

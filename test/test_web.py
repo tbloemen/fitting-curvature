@@ -14,8 +14,13 @@ import numpy as np
 import pytest
 import torch
 
-from web.config_manager import (DEFAULT_CONFIG, get_default_config,
-                                load_config, save_config, validate_config)
+from web.config_manager import (
+    DEFAULT_CONFIG,
+    get_default_config,
+    load_config,
+    save_config,
+    validate_config,
+)
 from web.training_manager import TrainingManager, TrainingState, TrainingStatus
 
 # --- Config Manager Tests ---
@@ -323,85 +328,7 @@ def test_training_state_creation():
 
     assert state.status == TrainingStatus.IDLE
     assert state.iteration == 0
-    assert state.version == 0
     assert state.loss_history == []
-
-
-def test_training_manager_observer_pattern(training_manager):
-    """Test observer pattern for state updates."""
-    callback_count = [0]
-
-    def observer_callback():
-        callback_count[0] += 1
-
-    # Add observer
-    training_manager.add_observer(observer_callback)
-
-    # Notify observers
-    training_manager._notify_observers()
-
-    assert callback_count[0] == 1
-
-    # Remove observer
-    training_manager.remove_observer(observer_callback)
-    training_manager._notify_observers()
-
-    # Count should not increase
-    assert callback_count[0] == 1
-
-
-def test_training_manager_multiple_observers(training_manager):
-    """Test multiple observers can be registered."""
-    counts = {"obs1": 0, "obs2": 0}
-
-    def obs1():
-        counts["obs1"] += 1
-
-    def obs2():
-        counts["obs2"] += 1
-
-    training_manager.add_observer(obs1)
-    training_manager.add_observer(obs2)
-
-    training_manager._notify_observers()
-
-    assert counts["obs1"] == 1
-    assert counts["obs2"] == 1
-
-
-def test_training_manager_observer_duplicate(training_manager):
-    """Test that adding the same observer twice doesn't duplicate it."""
-    count = [0]
-
-    def observer():
-        count[0] += 1
-
-    training_manager.add_observer(observer)
-    training_manager.add_observer(observer)  # Add again
-
-    training_manager._notify_observers()
-
-    assert count[0] == 1  # Should only be called once
-
-
-def test_training_manager_observer_error_handling(training_manager):
-    """Test that observer errors don't break notification."""
-    counts = {"good": 0}
-
-    def bad_observer():
-        raise RuntimeError("Observer error")
-
-    def good_observer():
-        counts["good"] += 1
-
-    training_manager.add_observer(bad_observer)
-    training_manager.add_observer(good_observer)
-
-    # Should not raise exception
-    training_manager._notify_observers()
-
-    # Good observer should still be called
-    assert counts["good"] == 1
 
 
 def test_training_manager_load_data(training_manager):
@@ -488,7 +415,6 @@ def test_training_manager_callback(training_manager):
     assert state.embeddings.shape == (50, 3)
     assert len(state.loss_history) == 1
     assert state.loss_history[0] == (10, 0.5)
-    assert state.version == 1
 
 
 def test_training_manager_callback_stop_requested(training_manager):
@@ -507,21 +433,24 @@ def test_training_manager_callback_stop_requested(training_manager):
     assert should_continue is False
 
 
-def test_training_manager_callback_increments_version(training_manager):
-    """Test callback increments version for UI updates."""
+def test_training_manager_callback_calls_update_callback(training_manager):
+    """Test callback invokes update_callback."""
     mock_model = Mock()
     mock_model.points = torch.randn(50, 3)
 
-    initial_version = training_manager.state.version
+    callback_calls = []
 
-    # Call callback multiple times
+    def on_update(iteration, loss, model, phase, state):
+        callback_calls.append((iteration, loss))
+
+    training_manager._update_callback = on_update
+
     for i in range(5):
         training_manager._training_callback(
             iteration=i, loss=0.5, model=mock_model, phase="main"
         )
 
-    state = training_manager.get_state()
-    assert state.version == initial_version + 5
+    assert len(callback_calls) == 5
 
 
 def test_training_manager_reset(training_manager):

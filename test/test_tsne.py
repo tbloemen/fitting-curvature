@@ -43,9 +43,9 @@ class TestAffinities:
         entropy = -torch.sum(probs * torch.log(probs + 1e-10))
         perplexity = torch.exp(entropy).item()
 
-        assert abs(perplexity - target_perplexity) < 1.0, (
-            f"Perplexity {perplexity} not close to target {target_perplexity}"
-        )
+        assert (
+            abs(perplexity - target_perplexity) < 1.0
+        ), f"Perplexity {perplexity} not close to target {target_perplexity}"
 
     def test_affinity_symmetry(self):
         """Test that computed affinities are symmetric."""
@@ -217,8 +217,8 @@ class TestTSNEEmbedding:
         # Manual training loop to track losses
         data = small_dataset.to(device)
         from src.affinities import compute_perplexity_affinities
-        from src.kernels import compute_q_matrix
         from src.embedding import ConstantCurvatureEmbedding, compute_tsne_kl_loss
+        from src.kernels import compute_q_matrix
         from src.riemannian_optimizer import RiemannianSGDMomentum
 
         V = compute_perplexity_affinities(data, perplexity=10.0).to(device)
@@ -249,9 +249,9 @@ class TestTSNEEmbedding:
         early_avg = sum(losses[:10]) / 10
         late_avg = sum(losses[-10:]) / 10
 
-        assert late_avg < early_avg, (
-            f"Loss did not decrease: early={early_avg:.4f}, late={late_avg:.4f}"
-        )
+        assert (
+            late_avg < early_avg
+        ), f"Loss did not decrease: early={early_avg:.4f}, late={late_avg:.4f}"
 
     def test_tsne_kl_loss_computation(self):
         """Test KL loss computation directly."""
@@ -299,9 +299,9 @@ class TestTSNEEmbedding:
         spatial = embeddings[:, 1:]
         constraint = -(x0**2) + (spatial**2).sum(dim=1)
         expected = torch.ones_like(constraint) * (-1.0)
-        assert torch.allclose(constraint, expected, atol=1e-3), (
-            "Hyperboloid constraint violated"
-        )
+        assert torch.allclose(
+            constraint, expected, atol=1e-3
+        ), "Hyperboloid constraint violated"
 
         # Test spherical
         model_sph = fit_embedding(
@@ -321,7 +321,9 @@ class TestTSNEEmbedding:
         embeddings = model_sph.get_embeddings()
         norms = (embeddings**2).sum(dim=1)
         expected = torch.ones_like(norms)
-        assert torch.allclose(norms, expected, atol=1e-3), "Spherical constraint violated"
+        assert torch.allclose(
+            norms, expected, atol=1e-3
+        ), "Spherical constraint violated"
 
 
 class TestRiemannianSGDMomentum:
@@ -344,7 +346,9 @@ class TestRiemannianSGDMomentum:
 
         torch.manual_seed(42)
         params = torch.randn(10, 3, requires_grad=True)
-        optimizer = RiemannianSGDMomentum([params], lr=0.01, curvature=0.0, momentum=0.5)
+        optimizer = RiemannianSGDMomentum(
+            [params], lr=0.01, curvature=0.0, momentum=0.5
+        )
 
         # Create dummy gradient
         loss = (params**2).sum()
