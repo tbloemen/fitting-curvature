@@ -128,6 +128,8 @@ def volume_distortion(
     k: int = 10,
 ) -> float:
     """
+    TODO: This part is not nice for a metric, but is absolutely nice to use in curvature estimation.
+
     Ratio of local neighborhood volumes (high-dim vs embedded), averaged.
 
     Uses the k-th neighbor distance as a proxy for local volume.
@@ -160,48 +162,6 @@ def volume_distortion(
 
     log_ratio = np.abs(np.log(embed_sorted / high_sorted))
     return float(np.mean(log_ratio))
-
-
-def spectral_distortion(
-    high_dim_distances: np.ndarray,
-    embedded_distances: np.ndarray,
-    n_eigenvalues: int = 20,
-) -> float:
-    """
-    Compare top eigenvalues of distance matrices via Pearson correlation.
-
-    Parameters
-    ----------
-    high_dim_distances : np.ndarray, shape (n, n)
-    embedded_distances : np.ndarray, shape (n, n)
-    n_eigenvalues : int
-        Number of top eigenvalues to compare
-
-    Returns
-    -------
-    float
-        Pearson correlation of top eigenvalues (0 to 1, higher is better)
-    """
-    n = high_dim_distances.shape[0]
-    n_eig = min(n_eigenvalues, n - 1)
-
-    # Double-center distance matrices (classical MDS kernel)
-    def double_center(D):
-        D_sq = D**2
-        row_mean = D_sq.mean(axis=1, keepdims=True)
-        col_mean = D_sq.mean(axis=0, keepdims=True)
-        total_mean = D_sq.mean()
-        return -0.5 * (D_sq - row_mean - col_mean + total_mean)
-
-    B_high = double_center(high_dim_distances)
-    B_embed = double_center(embedded_distances)
-
-    # Top eigenvalues (largest)
-    eig_high = np.linalg.eigvalsh(B_high)[-n_eig:][::-1]
-    eig_embed = np.linalg.eigvalsh(B_embed)[-n_eig:][::-1]
-
-    corr = np.corrcoef(eig_high, eig_embed)[0, 1]
-    return float(corr) if not np.isnan(corr) else 0.0
 
 
 # ---------------------------------------------------------------------------
