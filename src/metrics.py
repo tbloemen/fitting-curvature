@@ -1,3 +1,4 @@
+from enum import Enum
 from typing import Dict, Optional, Tuple
 
 import numpy as np
@@ -10,6 +11,11 @@ from sklearn.metrics import silhouette_score
 # For N samples, sklearn computes an N×N distance matrix
 # At 10k samples, this is 10k × 10k × 4 bytes = 400MB (manageable)
 MAX_SAMPLES_FOR_FULL_EVALUATION = 10000
+
+
+class LossType(Enum):
+    GU2019 = "gu2019"
+    MSE = "mse"
 
 
 # ---------------------------------------------------------------------------
@@ -87,8 +93,7 @@ def knn_overlap(
 
 
 def geodesic_distortion(
-    high_dim_distances: np.ndarray,
-    embedded_distances: np.ndarray,
+    high_dim_distances: np.ndarray, embedded_distances: np.ndarray, method: LossType
 ) -> float:
     """
     Distortion between high-dim and embedded pairwise distances as presented by Gu et al (2019).
@@ -109,8 +114,12 @@ def geodesic_distortion(
     idx = np.triu_indices(high_dim_distances.shape[0], k=1)
     high_flat = high_dim_distances[idx]
     embed_flat = embedded_distances[idx]
-    distortion = np.sum(np.abs((embed_flat / high_flat) ** 2 - 1)) / len(embed_flat)
-    return float(distortion)
+    if method == LossType.GU2019:
+        distortion = np.mean(np.abs((embed_flat / high_flat) ** 2 - 1))
+        return float(distortion)
+    elif method == LossType.MSE:
+        distortion = np.mean((embed_flat - high_flat) ** 2)
+        return float(distortion)
 
 
 def volume_distortion(
@@ -409,19 +418,15 @@ def compute_all_metrics(
 
     # --- B. Global geometry preservation ---
     if has_high_dist:
-        results["geodesic_distortion"] = geodesic_distortion(
-            high_dim_distances, embedded_distances
+        results["geodesic_distortion_gu"] = geodesic_distortion(
+            high_dim_distances, embedded_distances, LossType.GU2019
         )
-        results["volume_distortion"] = volume_distortion(
-            high_dim_distances, embedded_distances, k=n_neighbors
-        )
-        results["spectral_distortion"] = spectral_distortion(
-            high_dim_distances, embedded_distances
+        results["geodesic_distortion_mse"] = geodesic_distortion(
+            high_dim_distances, embedded_distances, LossType.MSE
         )
     else:
-        results["geodesic_distortion"] = None
-        results["volume_distortion"] = None
-        results["spectral_distortion"] = None
+        results["geodesic_distortion_gu"] = None
+        results["geodesic_distortion_mse"] = None
 
     # --- C. Space efficiency ---
     results["area_utilisation"] = area_utilisation(embeddings)
