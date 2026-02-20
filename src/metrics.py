@@ -1,13 +1,21 @@
-from typing import Tuple
+from typing import Dict, Optional, Tuple
 
 import numpy as np
+from scipy.spatial import ConvexHull
+from scipy.spatial.distance import pdist, squareform
+from scipy.stats import spearmanr
 from sklearn.manifold import trustworthiness
-
+from sklearn.metrics import silhouette_score
 
 # Maximum number of samples before switching to sampling-based evaluation
 # For N samples, sklearn computes an N×N distance matrix
 # At 10k samples, this is 10k × 10k × 4 bytes = 400MB (manageable)
 MAX_SAMPLES_FOR_FULL_EVALUATION = 10000
+
+
+# ---------------------------------------------------------------------------
+# A. Local structure preservation
+# ---------------------------------------------------------------------------
 
 
 def continuity(
@@ -37,6 +45,357 @@ def continuity(
     # Compute trustworthiness in the reverse direction (low -> high)
     # This gives us continuity (high -> low)
     return trustworthiness(low_dim, high_dim, n_neighbors=n_neighbors)
+
+
+def knn_overlap(
+    high_dim_distances: np.ndarray,
+    embedded_distances: np.ndarray,
+    k: int = 10,
+) -> float:
+    """
+    Fraction of k-nearest neighbors preserved between high-dim and embedded spaces.
+
+    Parameters
+    ----------
+    high_dim_distances : np.ndarray, shape (n, n)
+        Pairwise distance matrix in high-dimensional space
+    embedded_distances : np.ndarray, shape (n, n)
+        Pairwise geodesic distance matrix in embedded space
+    k : int
+        Number of neighbors
+
+    Returns
+    -------
+    float
+        Mean fraction of preserved neighbors (0 to 1, higher is better)
+    """
+    n = high_dim_distances.shape[0]
+    k = min(k, n - 1)
+
+    # Get k-NN indices from each distance matrix (exclude self)
+    high_knn = np.argsort(high_dim_distances, axis=1)[:, 1 : k + 1]
+    embed_knn = np.argsort(embedded_distances, axis=1)[:, 1 : k + 1]
+
+    overlap = 0.0
+    for i in range(n):
+        overlap += len(np.intersect1d(high_knn[i], embed_knn[i])) / k
+    return overlap / n
+
+
+# ---------------------------------------------------------------------------
+# B. Global geometry preservation
+# ---------------------------------------------------------------------------
+
+
+def geodesic_distortion(
+    high_dim_distances: np.ndarray,
+    embedded_distances: np.ndarray,
+) -> float:
+    """
+    Spearman rank correlation between high-dim and embedded pairwise distances.
+
+    Parameters
+    ----------
+    high_dim_distances : np.ndarray, shape (n, n)
+        High-dimensional pairwise distance matrix
+    embedded_distances : np.ndarray, shape (n, n)
+        Embedded geodesic pairwise distance matrix
+
+    Returns
+    -------
+    float
+        Spearman correlation (−1 to 1, higher is better)
+    """
+    # Extract upper triangle (exclude diagonal)
+    idx = np.triu_indices(high_dim_distances.shape[0], k=1)
+    high_flat = high_dim_distances[idx]
+    embed_flat = embedded_distances[idx]
+    corr, _ = spearmanr(high_flat, embed_flat)
+    return float(corr)
+
+
+def volume_distortion(
+    high_dim_distances: np.ndarray,
+    embedded_distances: np.ndarray,
+    k: int = 10,
+) -> float:
+    """
+    Ratio of local neighborhood volumes (high-dim vs embedded), averaged.
+
+    Uses the k-th neighbor distance as a proxy for local volume.
+    Returns the mean log-ratio (0 = no distortion).
+
+    Parameters
+    ----------
+    high_dim_distances : np.ndarray, shape (n, n)
+    embedded_distances : np.ndarray, shape (n, n)
+    k : int
+        Neighborhood size
+
+    Returns
+    -------
+    float
+        Mean absolute log-ratio of k-th neighbor distances.
+        0 = perfect, higher = more distortion.
+    """
+    n = high_dim_distances.shape[0]
+    k = min(k, n - 1)
+
+    # k-th neighbor distance for each point
+    high_sorted = np.sort(high_dim_distances, axis=1)[:, k]
+    embed_sorted = np.sort(embedded_distances, axis=1)[:, k]
+
+    # Avoid log(0)
+    eps = 1e-10
+    high_sorted = np.maximum(high_sorted, eps)
+    embed_sorted = np.maximum(embed_sorted, eps)
+
+    log_ratio = np.abs(np.log(embed_sorted / high_sorted))
+    return float(np.mean(log_ratio))
+
+
+def spectral_distortion(
+    high_dim_distances: np.ndarray,
+    embedded_distances: np.ndarray,
+    n_eigenvalues: int = 20,
+) -> float:
+    """
+    Compare top eigenvalues of distance matrices via Pearson correlation.
+
+    Parameters
+    ----------
+    high_dim_distances : np.ndarray, shape (n, n)
+    embedded_distances : np.ndarray, shape (n, n)
+    n_eigenvalues : int
+        Number of top eigenvalues to compare
+
+    Returns
+    -------
+    float
+        Pearson correlation of top eigenvalues (0 to 1, higher is better)
+    """
+    n = high_dim_distances.shape[0]
+    n_eig = min(n_eigenvalues, n - 1)
+
+    # Double-center distance matrices (classical MDS kernel)
+    def double_center(D):
+        D_sq = D**2
+        row_mean = D_sq.mean(axis=1, keepdims=True)
+        col_mean = D_sq.mean(axis=0, keepdims=True)
+        total_mean = D_sq.mean()
+        return -0.5 * (D_sq - row_mean - col_mean + total_mean)
+
+    B_high = double_center(high_dim_distances)
+    B_embed = double_center(embedded_distances)
+
+    # Top eigenvalues (largest)
+    eig_high = np.linalg.eigvalsh(B_high)[-n_eig:][::-1]
+    eig_embed = np.linalg.eigvalsh(B_embed)[-n_eig:][::-1]
+
+    corr = np.corrcoef(eig_high, eig_embed)[0, 1]
+    return float(corr) if not np.isnan(corr) else 0.0
+
+
+# ---------------------------------------------------------------------------
+# C. Space efficiency
+# ---------------------------------------------------------------------------
+
+
+def area_utilisation(embeddings: np.ndarray) -> float:
+    """
+    Fraction of bounding area used by the convex hull of the embedding.
+
+    Uses the 2D projection (first two spatial coordinates).
+
+    Parameters
+    ----------
+    embeddings : np.ndarray, shape (n, d)
+        Embedded points (ambient coordinates)
+
+    Returns
+    -------
+    float
+        Ratio of convex hull area to bounding box area (0 to 1)
+    """
+    # Use first two spatial dimensions
+    if embeddings.shape[1] <= 2:
+        pts = embeddings[:, :2]
+    else:
+        # For curved spaces the first column is x0 (time/radial); skip it
+        pts = embeddings[:, 1:3]
+
+    if pts.shape[0] < 3:
+        return 0.0
+
+    try:
+        hull = ConvexHull(pts)
+        hull_area = hull.volume  # In 2D, ConvexHull.volume is the area
+    except Exception:
+        return 0.0
+
+    # Bounding box area
+    ranges = pts.max(axis=0) - pts.min(axis=0)
+    bbox_area = float(np.prod(ranges))
+    if bbox_area < 1e-12:
+        return 0.0
+
+    return float(hull_area / bbox_area)
+
+
+def radial_distribution(embeddings: np.ndarray) -> float:
+    """
+    Normalized standard deviation of radial distances from centroid.
+
+    Higher values indicate more uniform spread across the space.
+
+    Parameters
+    ----------
+    embeddings : np.ndarray, shape (n, d)
+
+    Returns
+    -------
+    float
+        Coefficient of variation of radial distances (std / mean).
+        Lower = more uniform spread.
+    """
+    centroid = embeddings.mean(axis=0)
+    radii = np.linalg.norm(embeddings - centroid, axis=1)
+    mean_r = radii.mean()
+    if mean_r < 1e-12:
+        return 0.0
+    return float(radii.std() / mean_r)
+
+
+# ---------------------------------------------------------------------------
+# D. Perceptual evaluation
+# ---------------------------------------------------------------------------
+
+
+def cluster_interpretability(
+    embedded_distances: np.ndarray,
+    labels: np.ndarray,
+) -> float:
+    """
+    Silhouette score using labels on embedded distances.
+
+    Parameters
+    ----------
+    embedded_distances : np.ndarray, shape (n, n)
+        Pairwise geodesic distance matrix in embedded space
+    labels : np.ndarray, shape (n,)
+
+    Returns
+    -------
+    float
+        Silhouette score (−1 to 1, higher = better separated clusters)
+    """
+    unique_labels = np.unique(labels)
+    if len(unique_labels) < 2:
+        return 0.0
+    return float(silhouette_score(embedded_distances, labels, metric="precomputed"))
+
+
+def over_smoothing(
+    embedded_distances: np.ndarray,
+    labels: np.ndarray,
+) -> float:
+    """
+    Ratio of mean inter-cluster to mean intra-cluster distance.
+
+    Low values indicate over-smoothing (clusters collapsed together).
+
+    Parameters
+    ----------
+    embedded_distances : np.ndarray, shape (n, n)
+    labels : np.ndarray, shape (n,)
+
+    Returns
+    -------
+    float
+        Inter/intra distance ratio. Higher = better separation.
+    """
+    unique_labels = np.unique(labels)
+    if len(unique_labels) < 2:
+        return 0.0
+
+    intra_dists = []
+    inter_dists = []
+    for lbl in unique_labels:
+        mask = labels == lbl
+        idx = np.where(mask)[0]
+        # Intra-cluster
+        if len(idx) > 1:
+            pairs = embedded_distances[np.ix_(idx, idx)]
+            triu = pairs[np.triu_indices(len(idx), k=1)]
+            intra_dists.extend(triu.tolist())
+        # Inter-cluster
+        other_idx = np.where(~mask)[0]
+        if len(other_idx) > 0 and len(idx) > 0:
+            cross = embedded_distances[np.ix_(idx, other_idx)]
+            inter_dists.extend(cross.ravel().tolist())
+
+    mean_intra = np.mean(intra_dists) if intra_dists else 1e-10
+    mean_inter = np.mean(inter_dists) if inter_dists else 0.0
+
+    if mean_intra < 1e-10:
+        return float(mean_inter) if mean_inter > 0 else 0.0
+    return float(mean_inter / mean_intra)
+
+
+def false_structure(
+    high_dim_distances: np.ndarray,
+    embedded_distances: np.ndarray,
+    threshold_percentile: float = 10.0,
+) -> float:
+    """
+    Compare connected components at a distance threshold in both spaces.
+
+    Uses a threshold at the given percentile of the high-dim distance distribution.
+    Returns the absolute difference in number of connected components.
+
+    Parameters
+    ----------
+    high_dim_distances : np.ndarray, shape (n, n)
+    embedded_distances : np.ndarray, shape (n, n)
+    threshold_percentile : float
+        Percentile of high-dim distances to use as threshold
+
+    Returns
+    -------
+    float
+        Absolute difference in number of connected components.
+        0 = same structure, higher = more false structure.
+    """
+    idx = np.triu_indices(high_dim_distances.shape[0], k=1)
+    threshold = np.percentile(high_dim_distances[idx], threshold_percentile)
+
+    def count_components(dist_matrix, thresh):
+        n = dist_matrix.shape[0]
+        adj = dist_matrix <= thresh
+        np.fill_diagonal(adj, False)
+        visited = np.zeros(n, dtype=bool)
+        components = 0
+        for i in range(n):
+            if not visited[i]:
+                components += 1
+                stack = [i]
+                while stack:
+                    node = stack.pop()
+                    if not visited[node]:
+                        visited[node] = True
+                        neighbors = np.where(adj[node] & ~visited)[0]
+                        stack.extend(neighbors.tolist())
+        return components
+
+    cc_high = count_components(high_dim_distances, threshold)
+    cc_embed = count_components(embedded_distances, threshold)
+
+    return float(abs(cc_high - cc_embed))
+
+
+# ---------------------------------------------------------------------------
+# Aggregated metric computation
+# ---------------------------------------------------------------------------
 
 
 def evaluate_embedding(
@@ -86,3 +445,102 @@ def evaluate_embedding(
     cont_score = continuity(high_dim, low_dim, n_neighbors=n_neighbors)
 
     return trust_score, cont_score
+
+
+def compute_all_metrics(
+    embedded_distances: np.ndarray,
+    embeddings: np.ndarray,
+    high_dim_data: Optional[np.ndarray] = None,
+    high_dim_distances: Optional[np.ndarray] = None,
+    labels: Optional[np.ndarray] = None,
+    n_neighbors: int = 10,
+) -> Dict[str, Optional[float]]:
+    """
+    Compute all embedding quality metrics.
+
+    Parameters
+    ----------
+    embedded_distances : np.ndarray, shape (n, n)
+        Pairwise geodesic distances in embedded space
+    embeddings : np.ndarray, shape (n, d)
+        Embedded points in ambient coordinates
+    high_dim_data : np.ndarray, optional, shape (n, D)
+        Original high-dimensional data (needed for trustworthiness/continuity)
+    high_dim_distances : np.ndarray, optional, shape (n, n)
+        High-dimensional pairwise distance matrix
+    labels : np.ndarray, optional, shape (n,)
+        Class labels for cluster-based metrics
+    n_neighbors : int
+        Number of neighbors for local metrics
+
+    Returns
+    -------
+    Dict[str, Optional[float]]
+        Dictionary of metric name -> value. None if metric could not be computed.
+    """
+    results: Dict[str, Optional[float]] = {}
+
+    # Compute high-dim distances from data if not provided
+    if high_dim_distances is None and high_dim_data is not None:
+        high_dim_distances = squareform(pdist(high_dim_data))
+
+    has_high_dist = high_dim_distances is not None
+    has_labels = labels is not None and len(np.unique(labels)) >= 2
+
+    # --- A. Local structure preservation ---
+    if high_dim_data is not None:
+        results["trustworthiness"] = float(
+            trustworthiness(high_dim_data, embeddings, n_neighbors=n_neighbors)
+        )
+        results["continuity"] = continuity(
+            high_dim_data, embeddings, n_neighbors=n_neighbors
+        )
+    else:
+        results["trustworthiness"] = None
+        results["continuity"] = None
+
+    if has_high_dist:
+        results["knn_overlap"] = knn_overlap(
+            high_dim_distances, embedded_distances, k=n_neighbors
+        )
+    else:
+        results["knn_overlap"] = None
+
+    # --- B. Global geometry preservation ---
+    if has_high_dist:
+        results["geodesic_distortion"] = geodesic_distortion(
+            high_dim_distances, embedded_distances
+        )
+        results["volume_distortion"] = volume_distortion(
+            high_dim_distances, embedded_distances, k=n_neighbors
+        )
+        results["spectral_distortion"] = spectral_distortion(
+            high_dim_distances, embedded_distances
+        )
+    else:
+        results["geodesic_distortion"] = None
+        results["volume_distortion"] = None
+        results["spectral_distortion"] = None
+
+    # --- C. Space efficiency ---
+    results["area_utilisation"] = area_utilisation(embeddings)
+    results["radial_distribution"] = radial_distribution(embeddings)
+
+    # --- D. Perceptual evaluation ---
+    if has_labels:
+        results["cluster_interpretability"] = cluster_interpretability(
+            embedded_distances, labels
+        )
+        results["over_smoothing"] = over_smoothing(embedded_distances, labels)
+    else:
+        results["cluster_interpretability"] = None
+        results["over_smoothing"] = None
+
+    if has_high_dist:
+        results["false_structure"] = false_structure(
+            high_dim_distances, embedded_distances
+        )
+    else:
+        results["false_structure"] = None
+
+    return results

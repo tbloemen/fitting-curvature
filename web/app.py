@@ -151,6 +151,14 @@ def _training_status_callback(status: str, error_message: str = "") -> None:
         msg["message"] = error_message
     asyncio.run_coroutine_threadsafe(_broadcast_json(msg), loop)
 
+    # Send metrics when training completes
+    if status == "completed" and training_manager.state.metrics is not None:
+        metrics_msg = {
+            "type": "metrics",
+            "metrics": training_manager.state.metrics,
+        }
+        asyncio.run_coroutine_threadsafe(_broadcast_json(metrics_msg), loop)
+
 
 _event_loop = None
 
@@ -229,6 +237,14 @@ async def stop_training():
 @app.get("/api/datasets")
 async def get_datasets():
     return {"datasets": VALID_DATASETS}
+
+
+@app.get("/api/metrics")
+async def get_metrics():
+    metrics = training_manager.state.metrics
+    if metrics is None:
+        return {"ok": False, "error": "No metrics available"}
+    return {"ok": True, "metrics": metrics}
 
 
 # --- WebSocket ---
