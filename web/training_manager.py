@@ -11,7 +11,9 @@ import torch
 
 from src.embedding import ConstantCurvatureEmbedding, fit_embedding
 from src.load_data import load_raw_data
+from src.manifolds import Euclidean, Hyperboloid, Sphere
 from src.matrices import get_default_init_scale, normalize_data
+from src.metrics import compute_all_metrics
 from src.types import InitMethod
 
 
@@ -41,6 +43,9 @@ class TrainingState:
     error_message: str = ""
     loss_history: list = field(default_factory=list)
     model: Optional[ConstantCurvatureEmbedding] = None
+    high_dim_data: Optional[np.ndarray] = None
+    high_dim_distances: Optional[np.ndarray] = None
+    metrics: Optional[Dict[str, Optional[float]]] = None
 
 
 class TrainingManager:
@@ -166,6 +171,15 @@ class TrainingManager:
 
             with self._lock:
                 self.state.labels = labels.cpu().numpy()
+                self.state.high_dim_data = data.cpu().numpy()
+                if precomputed_distances is not None:
+                    self.state.high_dim_distances = precomputed_distances.cpu().numpy()
+                else:
+                    from scipy.spatial.distance import pdist, squareform
+
+                    self.state.high_dim_distances = squareform(
+                        pdist(self.state.high_dim_data)
+                    )
 
             # Get configuration
             embed_dim = config["embedding"]["embed_dim"]
@@ -238,6 +252,7 @@ class TrainingManager:
                     self.state.status = TrainingStatus.COMPLETED
                     self.state.model = model
                     self.state.embeddings = model.points.detach().cpu().numpy()
+                    self._compute_metrics(curvature, embed_dim)
                     self._notify_status("completed")
 
             if torch.cuda.is_available():
@@ -250,6 +265,37 @@ class TrainingManager:
             self._notify_status("error", str(e))
             print(f"Training error: {e}")
             traceback.print_exc()
+
+    def _compute_metrics(self, curvature: float, embed_dim: int) -> None:
+        """Compute all quality metrics on the final embedding."""
+        try:
+            embeddings = self.state.embeddings
+            if embeddings is None:
+                return
+
+            # Compute embedded pairwise distances using the manifold
+            points_tensor = torch.tensor(embeddings, dtype=torch.float32)
+            if curvature > 0:
+                manifold = Sphere(curvature)
+            elif curvature < 0:
+                manifold = Hyperboloid(curvature)
+            else:
+                manifold = Euclidean()
+
+            with torch.no_grad():
+                embedded_distances = manifold.pairwise_distances(points_tensor).numpy()
+            np.fill_diagonal(embedded_distances, 0.0)
+
+            self.state.metrics = compute_all_metrics(
+                embedded_distances=embedded_distances,
+                embeddings=embeddings,
+                high_dim_data=self.state.high_dim_data,
+                high_dim_distances=self.state.high_dim_distances,
+                labels=self.state.labels,
+            )
+        except Exception as e:
+            print(f"Error computing metrics: {e}")
+            self.state.metrics = None
 
     def stop_training(self) -> None:
         """Request training to stop."""

@@ -175,6 +175,7 @@
   btnStart.addEventListener("click", function () {
     var config = buildConfig();
     LossChart.reset();
+    metricsPanel.style.display = "none";
 
     fetch("/api/training/start", {
       method: "POST",
@@ -288,6 +289,8 @@
       if (msg.status === "error" && msg.message) {
         toast("Training error: " + msg.message, "error");
       }
+    } else if (msg.type === "metrics") {
+      displayMetrics(msg.metrics);
     } else if (msg.type === "boundary") {
       currentCurvature = msg.curvature;
       if (msg.points) {
@@ -330,6 +333,79 @@
       iterationLabel.textContent;
 
     ThreeJSPlot.updatePlot(positions, colors, null, title);
+  }
+
+  // --- Metrics display ---
+  var metricsPanel = document.getElementById("metrics-panel");
+  var metricsGrid = document.getElementById("metrics-grid");
+
+  var METRIC_CATEGORIES = {
+    "Local Structure Preservation": {
+      trustworthiness: "Trustworthiness",
+      continuity: "Continuity",
+      knn_overlap: "k-NN Overlap",
+    },
+    "Global Geometry Preservation": {
+      geodesic_distortion_gu: "Geodesic Distortion (Gu et al.)",
+      geodesic_distortion_mse: "Geodesic Distortion (MSE)",
+    },
+    "Space Efficiency": {
+      area_utilisation: "Area Utilisation",
+      radial_distribution: "Radial Distribution",
+    },
+    "Perceptual Evaluation": {
+      cluster_interpretability: "Silhouette Score",
+      davies_bouldin: "Davies-Bouldin Index",
+      dunn_index: "Dunn Index",
+    },
+  };
+
+  function formatMetricValue(key, value) {
+    if (value === null || value === undefined) return null;
+    return value.toFixed(4);
+  }
+
+  function displayMetrics(metrics) {
+    metricsGrid.innerHTML = "";
+    metricsPanel.style.display = "";
+
+    var categories = Object.keys(METRIC_CATEGORIES);
+    for (var c = 0; c < categories.length; c++) {
+      var catName = categories[c];
+      var catMetrics = METRIC_CATEGORIES[catName];
+      var keys = Object.keys(catMetrics);
+
+      var card = document.createElement("div");
+      card.className = "metric-category";
+      var h3 = document.createElement("h3");
+      h3.textContent = catName;
+      card.appendChild(h3);
+
+      for (var k = 0; k < keys.length; k++) {
+        var key = keys[k];
+        var label = catMetrics[key];
+        var value = metrics[key];
+        var formatted = formatMetricValue(key, value);
+
+        var row = document.createElement("div");
+        row.className = "metric-row";
+
+        var nameSpan = document.createElement("span");
+        nameSpan.className = "metric-name";
+        nameSpan.textContent = label;
+
+        var valueSpan = document.createElement("span");
+        valueSpan.className =
+          "metric-value" + (formatted === null ? " na" : "");
+        valueSpan.textContent = formatted === null ? "N/A" : formatted;
+
+        row.appendChild(nameSpan);
+        row.appendChild(valueSpan);
+        card.appendChild(row);
+      }
+
+      metricsGrid.appendChild(card);
+    }
   }
 
   // --- Initialize visualizations ---
