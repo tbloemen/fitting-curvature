@@ -14,8 +14,13 @@ import numpy as np
 import pytest
 import torch
 
-from web.config_manager import (DEFAULT_CONFIG, get_default_config,
-                                load_config, save_config, validate_config)
+from web.config_manager import (
+    DEFAULT_CONFIG,
+    get_default_config,
+    load_config,
+    save_config,
+    validate_config,
+)
 from web.training_manager import TrainingManager, TrainingState, TrainingStatus
 
 # --- Config Manager Tests ---

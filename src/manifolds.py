@@ -18,7 +18,9 @@ from torch import Tensor
 from src.types import InitMethod
 
 
-def _pca_init(data: Tensor, n_components: int, init_scale: float, device: torch.device) -> Tensor:
+def _pca_init(
+    data: Tensor, n_components: int, init_scale: float, device: torch.device
+) -> Tensor:
     """
     Initialize points using PCA with specified scale.
 
@@ -600,9 +602,7 @@ class Hyperboloid(Manifold):
         # When v_norm/radius becomes large (>10), cosh and sinh explode
         max_norm = 10.0 * radius
         scale_factor = torch.where(
-            v_norm > max_norm,
-            max_norm / v_norm,
-            torch.ones_like(v_norm)
+            v_norm > max_norm, max_norm / v_norm, torch.ones_like(v_norm)
         )
         tangent_vec_clipped = tangent_vec * scale_factor
         v_norm_clipped = v_norm * scale_factor
@@ -610,7 +610,10 @@ class Hyperboloid(Manifold):
         # Exponential map: exp_x(v) = cosh(||v||_L/r) x + sinh(||v||_L/r) (r * v/||v||_L)
         x_new = (
             torch.cosh(v_norm_clipped / radius) * points
-            + torch.sinh(v_norm_clipped / radius) * tangent_vec_clipped / v_norm_clipped * radius
+            + torch.sinh(v_norm_clipped / radius)
+            * tangent_vec_clipped
+            / v_norm_clipped
+            * radius
         )
 
         # Normalize to maintain hyperboloid constraint exactly

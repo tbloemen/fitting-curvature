@@ -254,7 +254,10 @@ class TrainingManager:
     def stop_training(self) -> None:
         """Request training to stop."""
         with self._lock:
-            if self.state.status in (TrainingStatus.RUNNING, TrainingStatus.PRECOMPUTING):
+            if self.state.status in (
+                TrainingStatus.RUNNING,
+                TrainingStatus.PRECOMPUTING,
+            ):
                 self._stop_requested = True
 
     def get_state(self) -> TrainingState:
