@@ -534,5 +534,4 @@ def compute_all_metrics(
         results["davies_bouldin"] = None
         results["dunn_index"] = None
 
-    print(results)
     return results
