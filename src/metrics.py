@@ -263,6 +263,135 @@ def cluster_interpretability(
     return float(silhouette_score(embedded_distances, labels, metric="precomputed"))
 
 
+def davies_bouldin(
+    embedded_distances: np.ndarray,
+    labels: np.ndarray,
+) -> float:
+    """
+    Davies-Bouldin index computed from a precomputed distance matrix.
+
+    Measures the average similarity ratio between each cluster and its most
+    similar cluster, where similarity is the ratio of within-cluster scatter
+    to between-cluster centroid distance. Lower values indicate better
+    separated and more compact clusters.
+
+    Parameters
+    ----------
+    embedded_distances : np.ndarray, shape (n, n)
+        Pairwise geodesic distance matrix in embedded space
+    labels : np.ndarray, shape (n,)
+
+    Returns
+    -------
+    float
+        Davies-Bouldin index (0 to infinity, lower = better)
+    """
+    unique_labels = np.unique(labels)
+    k = len(unique_labels)
+    if k < 2:
+        return 0.0
+
+    # Compute within-cluster scatter S_i (mean distance to cluster centroid)
+    # and between-cluster distances M_ij (distance between centroids).
+    # With precomputed distances, the "centroid" of a cluster is the medoid
+    # (the point minimising total distance to all others in the cluster),
+    # and S_i is the mean distance from each point to the medoid.
+    scatters = np.zeros(k)
+    medoid_indices = np.zeros(k, dtype=int)
+
+    for i, lbl in enumerate(unique_labels):
+        mask = labels == lbl
+        idx = np.where(mask)[0]
+        # Intra-cluster distance sub-matrix
+        sub_dist = embedded_distances[np.ix_(idx, idx)]
+        # Medoid: point with smallest total distance to others
+        medoid_local = np.argmin(sub_dist.sum(axis=1))
+        medoid_indices[i] = idx[medoid_local]
+        # Scatter: mean distance from all cluster members to the medoid
+        scatters[i] = sub_dist[medoid_local].mean()
+
+    # Between-cluster distance: distance between medoids
+    centroid_dist = np.zeros((k, k))
+    for i in range(k):
+        for j in range(k):
+            centroid_dist[i, j] = embedded_distances[
+                medoid_indices[i], medoid_indices[j]
+            ]
+
+    # DB index: average over clusters of max similarity ratio
+    db = 0.0
+    for i in range(k):
+        max_ratio = 0.0
+        for j in range(k):
+            if i == j:
+                continue
+            d_ij = centroid_dist[i, j]
+            if d_ij < 1e-12:
+                continue
+            ratio = (scatters[i] + scatters[j]) / d_ij
+            if ratio > max_ratio:
+                max_ratio = ratio
+        db += max_ratio
+    return float(db / k)
+
+
+def dunn_index(
+    embedded_distances: np.ndarray,
+    labels: np.ndarray,
+) -> float:
+    """
+    Dunn index computed from a precomputed distance matrix.
+
+    Ratio of the minimum inter-cluster distance to the maximum intra-cluster
+    diameter. Higher values indicate better clustering: tight clusters that
+    are far apart.
+
+    Parameters
+    ----------
+    embedded_distances : np.ndarray, shape (n, n)
+        Pairwise geodesic distance matrix in embedded space
+    labels : np.ndarray, shape (n,)
+
+    Returns
+    -------
+    float
+        Dunn index (0 to infinity, higher = better)
+    """
+    unique_labels = np.unique(labels)
+    k = len(unique_labels)
+    if k < 2:
+        return 0.0
+
+    cluster_indices = [np.where(labels == lbl)[0] for lbl in unique_labels]
+
+    # Maximum intra-cluster diameter (max pairwise distance within a cluster)
+    max_intra = 0.0
+    for idx in cluster_indices:
+        if len(idx) < 2:
+            continue
+        sub_dist = embedded_distances[np.ix_(idx, idx)]
+        diameter = sub_dist.max()
+        if diameter > max_intra:
+            max_intra = diameter
+
+    if max_intra < 1e-12:
+        return 0.0
+
+    # Minimum inter-cluster distance (min distance between any two points
+    # in different clusters)
+    min_inter = np.inf
+    for i in range(k):
+        for j in range(i + 1, k):
+            cross_dist = embedded_distances[
+                np.ix_(cluster_indices[i], cluster_indices[j])
+            ]
+            d_min = cross_dist.min()
+            if d_min < min_inter:
+                min_inter = d_min
+
+    return float(min_inter / max_intra)
+
+
 # ---------------------------------------------------------------------------
 # Aggregated metric computation
 # ---------------------------------------------------------------------------
@@ -398,8 +527,12 @@ def compute_all_metrics(
         results["cluster_interpretability"] = cluster_interpretability(
             embedded_distances, labels
         )
+        results["davies_bouldin"] = davies_bouldin(embedded_distances, labels)
+        results["dunn_index"] = dunn_index(embedded_distances, labels)
     else:
         results["cluster_interpretability"] = None
+        results["davies_bouldin"] = None
+        results["dunn_index"] = None
 
     print(results)
     return results

@@ -5,16 +5,16 @@ import pytest
 from scipy.spatial.distance import pdist, squareform
 
 from src.metrics import (
+    LossType,
     area_utilisation,
     cluster_interpretability,
     compute_all_metrics,
     continuity,
-    false_structure,
+    davies_bouldin,
+    dunn_index,
     geodesic_distortion,
     knn_overlap,
-    over_smoothing,
     radial_distribution,
-    spectral_distortion,
     volume_distortion,
 )
 
@@ -95,23 +95,31 @@ class TestLocalStructure:
 
 
 class TestGlobalGeometry:
-    def test_geodesic_distortion_perfect(self):
-        """Identical distances should give correlation ~1."""
+    def test_geodesic_distortion_gu_perfect(self):
+        """Identical distances should give distortion 0."""
         rng = np.random.default_rng(42)
         pts = rng.normal(size=(30, 3))
         dist = squareform(pdist(pts))
-        score = geodesic_distortion(dist, dist)
-        assert score == pytest.approx(1.0, abs=1e-6)
+        score = geodesic_distortion(dist, dist, LossType.GU2019)
+        assert score == pytest.approx(0.0, abs=1e-6)
 
-    def test_geodesic_distortion_range(self, identity_embedding):
-        _, _, high_dist, embed_dist, _ = identity_embedding
-        score = geodesic_distortion(high_dist, embed_dist)
-        assert -1.0 <= score <= 1.0
+    def test_geodesic_distortion_mse_perfect(self):
+        """Identical distances should give MSE 0."""
+        rng = np.random.default_rng(42)
+        pts = rng.normal(size=(30, 3))
+        dist = squareform(pdist(pts))
+        score = geodesic_distortion(dist, dist, LossType.MSE)
+        assert score == pytest.approx(0.0, abs=1e-6)
 
-    def test_geodesic_distortion_identity_is_good(self, identity_embedding):
+    def test_geodesic_distortion_gu_nonnegative(self, identity_embedding):
         _, _, high_dist, embed_dist, _ = identity_embedding
-        score = geodesic_distortion(high_dist, embed_dist)
-        assert score > 0.5
+        score = geodesic_distortion(high_dist, embed_dist, LossType.GU2019)
+        assert score >= 0.0
+
+    def test_geodesic_distortion_mse_nonnegative(self, identity_embedding):
+        _, _, high_dist, embed_dist, _ = identity_embedding
+        score = geodesic_distortion(high_dist, embed_dist, LossType.MSE)
+        assert score >= 0.0
 
     def test_volume_distortion_perfect(self):
         """Same distances should give zero distortion."""
@@ -125,19 +133,6 @@ class TestGlobalGeometry:
         _, _, high_dist, embed_dist, _ = identity_embedding
         score = volume_distortion(high_dist, embed_dist, k=5)
         assert score >= 0.0
-
-    def test_spectral_distortion_perfect(self):
-        """Same distances should give correlation ~1."""
-        rng = np.random.default_rng(42)
-        pts = rng.normal(size=(30, 3))
-        dist = squareform(pdist(pts))
-        score = spectral_distortion(dist, dist)
-        assert score == pytest.approx(1.0, abs=1e-6)
-
-    def test_spectral_distortion_range(self, identity_embedding):
-        _, _, high_dist, embed_dist, _ = identity_embedding
-        score = spectral_distortion(high_dist, embed_dist)
-        assert -1.0 <= score <= 1.0
 
 
 # ---------------------------------------------------------------------------
@@ -210,29 +205,36 @@ class TestPerceptualQuality:
         score = cluster_interpretability(dist, labels)
         assert score == 0.0
 
-    def test_over_smoothing_separated(self, identity_embedding):
+    def test_davies_bouldin_separated(self, identity_embedding):
         _, _, _, embed_dist, labels = identity_embedding
-        score = over_smoothing(embed_dist, labels)
-        # Well-separated clusters: inter > intra, so ratio > 1
+        score = davies_bouldin(embed_dist, labels)
+        # Well-separated clusters should have low DB index
+        assert score >= 0.0
+        assert score < 1.0
+
+    def test_davies_bouldin_single_label(self):
+        dist = squareform(pdist(np.eye(5)))
+        np.fill_diagonal(dist, 0.0)
+        labels = np.zeros(5, dtype=int)
+        score = davies_bouldin(dist, labels)
+        assert score == 0.0
+
+    def test_dunn_index_separated(self, identity_embedding):
+        _, _, _, embed_dist, labels = identity_embedding
+        score = dunn_index(embed_dist, labels)
+        # Well-separated clusters should have high Dunn index
         assert score > 1.0
 
-    def test_over_smoothing_single_label(self):
+    def test_dunn_index_single_label(self):
         dist = squareform(pdist(np.eye(5)))
+        np.fill_diagonal(dist, 0.0)
         labels = np.zeros(5, dtype=int)
-        score = over_smoothing(dist, labels)
+        score = dunn_index(dist, labels)
         assert score == 0.0
 
-    def test_false_structure_identical(self):
-        """Same distance matrix should give 0 false structure."""
-        rng = np.random.default_rng(42)
-        pts = rng.normal(size=(30, 3))
-        dist = squareform(pdist(pts))
-        score = false_structure(dist, dist)
-        assert score == 0.0
-
-    def test_false_structure_nonnegative(self, identity_embedding):
-        _, _, high_dist, embed_dist, _ = identity_embedding
-        score = false_structure(high_dist, embed_dist)
+    def test_dunn_index_nonnegative(self, random_embedding):
+        _, _, _, embed_dist, labels = random_embedding
+        score = dunn_index(embed_dist, labels)
         assert score >= 0.0
 
 
@@ -255,14 +257,13 @@ class TestComputeAllMetrics:
             "trustworthiness",
             "continuity",
             "knn_overlap",
-            "geodesic_distortion",
-            "volume_distortion",
-            "spectral_distortion",
+            "geodesic_distortion_gu",
+            "geodesic_distortion_mse",
             "area_utilisation",
             "radial_distribution",
             "cluster_interpretability",
-            "over_smoothing",
-            "false_structure",
+            "davies_bouldin",
+            "dunn_index",
         }
         assert set(result.keys()) == expected_keys
 
@@ -288,7 +289,8 @@ class TestComputeAllMetrics:
             labels=None,
         )
         assert result["cluster_interpretability"] is None
-        assert result["over_smoothing"] is None
+        assert result["davies_bouldin"] is None
+        assert result["dunn_index"] is None
         # Non-label metrics should still work
         assert result["trustworthiness"] is not None
         assert result["knn_overlap"] is not None
@@ -306,7 +308,7 @@ class TestComputeAllMetrics:
         assert result["continuity"] is None
         # Distance-based metrics should still work
         assert result["knn_overlap"] is not None
-        assert result["geodesic_distortion"] is not None
+        assert result["geodesic_distortion_gu"] is not None
 
     def test_without_any_high_dim(self, identity_embedding):
         _, embedded, _, embed_dist, labels = identity_embedding
@@ -319,8 +321,8 @@ class TestComputeAllMetrics:
         )
         # All metrics needing high-dim should be None
         assert result["knn_overlap"] is None
-        assert result["geodesic_distortion"] is None
-        assert result["false_structure"] is None
+        assert result["geodesic_distortion_gu"] is None
+        assert result["geodesic_distortion_mse"] is None
         # Space efficiency metrics should still work
         assert result["area_utilisation"] is not None
         assert result["radial_distribution"] is not None
@@ -337,4 +339,4 @@ class TestComputeAllMetrics:
         )
         # Should compute distances from data and produce results
         assert result["knn_overlap"] is not None
-        assert result["geodesic_distortion"] is not None
+        assert result["geodesic_distortion_gu"] is not None

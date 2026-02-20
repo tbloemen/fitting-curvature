@@ -346,25 +346,22 @@
       knn_overlap: "k-NN Overlap",
     },
     "Global Geometry Preservation": {
-      geodesic_distortion: "Geodesic Distortion",
-      volume_distortion: "Volume Distortion",
-      spectral_distortion: "Spectral Distortion",
+      geodesic_distortion_gu: "Geodesic Distortion (Gu et al.)",
+      geodesic_distortion_mse: "Geodesic Distortion (MSE)",
     },
     "Space Efficiency": {
       area_utilisation: "Area Utilisation",
       radial_distribution: "Radial Distribution",
     },
     "Perceptual Evaluation": {
-      cluster_interpretability: "Cluster Interpretability",
-      over_smoothing: "Over-smoothing Ratio",
-      false_structure: "False Structure",
+      cluster_interpretability: "Silhouette Score",
+      davies_bouldin: "Davies-Bouldin Index",
+      dunn_index: "Dunn Index",
     },
   };
 
   function formatMetricValue(key, value) {
     if (value === null || value === undefined) return null;
-    // Most metrics show 4 decimal places; integer-valued ones show fewer
-    if (key === "false_structure") return value.toFixed(0);
     return value.toFixed(4);
   }
 
