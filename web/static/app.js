@@ -163,6 +163,12 @@
       });
   });
 
+  // --- Download SVG button ---
+  var btnDownloadSVG = document.getElementById("btn-download-svg");
+  btnDownloadSVG.addEventListener("click", function () {
+    ThreeJSPlot.downloadSVG(fields.dataset.value, currentCurvature);
+  });
+
   // --- Training controls ---
   var btnStart = document.getElementById("btn-start");
   var btnStop = document.getElementById("btn-stop");
@@ -176,6 +182,7 @@
     var config = buildConfig();
     LossChart.reset();
     metricsPanel.style.display = "none";
+    btnDownloadSVG.disabled = true;
 
     fetch("/api/training/start", {
       method: "POST",
@@ -333,6 +340,7 @@
       iterationLabel.textContent;
 
     ThreeJSPlot.updatePlot(positions, colors, null, title);
+    btnDownloadSVG.disabled = false;
   }
 
   // --- Metrics display ---

@@ -12,6 +12,12 @@ const ThreeJSPlot = (function () {
   let container;
   const frustumSize = 2.4;
 
+  // Store last data for SVG export
+  let lastPositions = null;
+  let lastColors = null;
+  let lastBoundaryVisible = false;
+  let lastTitle = "";
+
   function initPlot(containerId) {
     container = document.getElementById(containerId);
     if (!container) {
@@ -117,6 +123,13 @@ const ThreeJSPlot = (function () {
   function updatePlot(positions, colors, boundary, title) {
     if (!pointsGeometry) return;
 
+    // Store for SVG export
+    if (positions && positions.length > 0) {
+      lastPositions = positions;
+      lastColors = colors;
+    }
+    if (title) lastTitle = title;
+
     if (positions && positions.length > 0) {
       // Convert 2D positions to 3D (add z=0)
       const n = positions.length / 2;
@@ -180,14 +193,75 @@ const ThreeJSPlot = (function () {
       boundaryGeometry.attributes.position.needsUpdate = true;
       boundaryLine.computeLineDistances();
       boundaryLine.visible = true;
+      lastBoundaryVisible = true;
     } else {
       boundaryLine.visible = false;
+      lastBoundaryVisible = false;
     }
   }
 
   function hideBoundary() {
     if (boundaryLine) boundaryLine.visible = false;
+    lastBoundaryVisible = false;
   }
 
-  return { initPlot, updatePlot, setBoundary, hideBoundary };
+  function downloadSVG(dataset, curvature) {
+    if (!lastPositions || lastPositions.length === 0) return;
+
+    const n = lastPositions.length / 2;
+    const pad = 1.15; // viewBox half-extent, slightly outside unit circle
+    const parts = [];
+
+    parts.push('<?xml version="1.0" encoding="UTF-8"?>');
+    parts.push(
+      '<svg xmlns="http://www.w3.org/2000/svg"' +
+        ' viewBox="' + (-pad) + " " + (-pad) + " " + (pad * 2) + " " + (pad * 2) + '"' +
+        ' width="500" height="500">',
+    );
+
+    // White background
+    parts.push(
+      '<rect x="' + (-pad) + '" y="' + (-pad) + '" width="' + (pad * 2) + '" height="' + (pad * 2) + '" fill="white"/>',
+    );
+
+    // Boundary ring (unit circle in data coords)
+    if (lastBoundaryVisible) {
+      parts.push(
+        '<circle cx="0" cy="0" r="1" fill="none" stroke="#444"' +
+          ' stroke-width="0.015" stroke-dasharray="0.05 0.03"/>',
+      );
+    }
+
+    // Points (SVG y-axis is flipped relative to data coords)
+    for (let i = 0; i < n; i++) {
+      const x = lastPositions[i * 2].toFixed(5);
+      const y = (-lastPositions[i * 2 + 1]).toFixed(5); // flip y
+      const r = Math.round(lastColors[i * 3] * 255);
+      const g = Math.round(lastColors[i * 3 + 1] * 255);
+      const b = Math.round(lastColors[i * 3 + 2] * 255);
+      parts.push(
+        '<circle cx="' + x + '" cy="' + y + '" r="0.016"' +
+          ' fill="rgb(' + r + "," + g + "," + b + ')" opacity="0.85"/>',
+      );
+    }
+
+    parts.push("</svg>");
+
+    // Build filename from dataset and curvature
+    var k = (curvature !== undefined && curvature !== null) ? curvature : 0;
+    var ds = (dataset || "embedding").replace(/[^a-zA-Z0-9_-]/g, "_");
+    var filename = ds + "_k" + k + ".svg";
+
+    const blob = new Blob([parts.join("\n")], { type: "image/svg+xml" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  return { initPlot, updatePlot, setBoundary, hideBoundary, downloadSVG };
 })();
