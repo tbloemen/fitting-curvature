@@ -408,6 +408,23 @@
     }
   }
 
+  // --- Projection change: re-render stored embeddings with new projection ---
+  fields.projection.addEventListener("change", function () {
+    fetch("/api/reproject", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projection: fields.projection.value }),
+    })
+      .then(function (r) {
+        return r.json();
+      })
+      .then(function (result) {
+        if (!result.ok) {
+          toast("Cannot reproject: " + result.error, "info");
+        }
+      });
+  });
+
   // --- Initialize visualizations ---
   ThreeJSPlot.initPlot("embedding-container");
   LossChart.init("loss-chart-container");

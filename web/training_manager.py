@@ -46,6 +46,7 @@ class TrainingState:
     high_dim_data: Optional[np.ndarray] = None
     high_dim_distances: Optional[np.ndarray] = None
     metrics: Optional[Dict[str, Optional[float]]] = None
+    projection: str = "stereographic"
 
 
 class TrainingManager:
@@ -142,6 +143,9 @@ class TrainingManager:
             self.state.error_message = ""
             self.state.loss_history = []
             self.state.max_iterations = config["embedding"]["n_iterations"]
+            self.state.projection = config.get("visualization", {}).get(
+                "spherical_projection", "stereographic"
+            )
 
         self._training_thread = threading.Thread(
             target=self._run_training, args=(config,), daemon=True
