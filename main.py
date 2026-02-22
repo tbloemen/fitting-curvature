@@ -1,5 +1,4 @@
 import tomllib
-
 import torch
 
 from src.embedding import fit_embedding
@@ -91,7 +90,7 @@ def main():
 
     # Get visualization settings
     viz_config = config.get("visualization", {})
-    spherical_projection = viz_config.get("spherical_projection", "direct")
+    spherical_projection = viz_config.get("spherical_projection", "orthographic")
 
     for k in curvatures:
         print(f"\n{'=' * 60}")

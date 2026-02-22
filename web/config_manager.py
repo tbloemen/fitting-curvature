@@ -34,7 +34,7 @@ DEFAULT_CONFIG = {
         "n_neighbors": 5,
     },
     "visualization": {
-        "spherical_projection": "direct",
+        "spherical_projection": "orthographic",
     },
 }
 

@@ -86,7 +86,6 @@ def project_to_2d(
         - "stereographic": Conformal projection (default)
         - "azimuthal_equidistant": Preserves distances from center point
         - "orthographic": Globe-like view (shows one hemisphere)
-        - "direct": Simply use spatial coordinates (simplest, bounded by radius)
         Ignored for k <= 0.
 
     Returns
