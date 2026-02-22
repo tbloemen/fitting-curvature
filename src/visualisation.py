@@ -166,23 +166,10 @@ def project_to_2d(
                 x_proj *= scale_factor
                 y_proj *= scale_factor
 
-        elif projection == "direct":
-            # Direct spatial coordinates: simplest option
-            spatial_axes = [a for a in range(X.shape[1]) if a != pole_axis]
-            x_proj = X[:, spatial_axes[i]]
-            y_proj = X[:, spatial_axes[j]]
-
-            # Scale to unit circle
-            max_dist = np.sqrt(x_proj**2 + y_proj**2).max()
-            if max_dist > 0:
-                scale_factor = 0.95 / max_dist
-                x_proj *= scale_factor
-                y_proj *= scale_factor
-
         else:
             raise ValueError(
                 f"Unknown projection '{projection}'. "
-                f"Choose from: stereographic, azimuthal_equidistant, orthographic, direct"
+                f"Choose from: stereographic, azimuthal_equidistant, orthographic"
             )
 
         return x_proj, y_proj

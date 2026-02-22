@@ -1,10 +1,10 @@
 """Configuration management for web interface."""
 
-import tomllib
 from pathlib import Path
 from typing import Any, Dict
 
 import toml
+import tomllib
 
 from src.load_data import VALID_DATASETS
 
@@ -181,7 +181,6 @@ def validate_config(config: Dict[str, Any]) -> tuple[bool, str]:
                 "stereographic",
                 "azimuthal_equidistant",
                 "orthographic",
-                "direct",
             ]
             if proj not in valid_projections:
                 return False, f"spherical_projection must be one of {valid_projections}"
