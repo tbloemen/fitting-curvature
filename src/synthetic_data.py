@@ -19,12 +19,8 @@ from torch import Tensor
 
 
 def generate_uniform_grid(n_samples: int) -> tuple[Tensor, Tensor, None]:
-    """Regular grid in [0,1]^2, labels by quadrant (0-3)."""
-    side = int(n_samples**0.5)
-    n_samples = side * side  # round to perfect square
-    xs = torch.linspace(0, 1, side)
-    grid_x, grid_y = torch.meshgrid(xs, xs, indexing="ij")
-    X = torch.stack([grid_x.flatten(), grid_y.flatten()], dim=1)
+    """Uniform random samples in [0,1]^2, labels by quadrant (0-3)."""
+    X = torch.rand(n_samples, 2)
     # Labels by quadrant
     y = (X[:, 0] >= 0.5).long() * 2 + (X[:, 1] >= 0.5).long()
     return X, y, None
