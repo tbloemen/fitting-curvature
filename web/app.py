@@ -121,7 +121,7 @@ def _training_update_callback(
     # Prepare binary data: project embeddings to 2D, interleave with colors
     if state.embeddings is not None and state.labels is not None:
         k = state.curvature
-        projection = "direct"  # default; spherical projection configured client-side
+        projection = state.projection
         x, y = project_to_2d(state.embeddings, k=k, i=0, j=1, projection=projection)
         colors = _labels_to_rgb(state.labels)
         # Interleave: [x0, y0, r0, g0, b0, x1, y1, r1, g1, b1, ...]
@@ -237,6 +237,32 @@ async def stop_training():
 @app.get("/api/datasets")
 async def get_datasets():
     return {"datasets": VALID_DATASETS}
+
+
+@app.post("/api/reproject")
+async def reproject(body: dict):
+    """Re-project stored embeddings with a new projection method and broadcast."""
+    projection = body.get("projection", "stereographic")
+    state = training_manager.get_state()
+
+    if state.embeddings is None or state.labels is None:
+        return {"ok": False, "error": "No embeddings available"}
+
+    # Update stored projection
+    training_manager.state.projection = projection
+
+    k = state.curvature
+    x, y = project_to_2d(state.embeddings, k=k, i=0, j=1, projection=projection)
+    colors = _labels_to_rgb(state.labels)
+    n = len(x)
+    binary = np.empty(n * 5, dtype=np.float32)
+    binary[0::5] = x.astype(np.float32)
+    binary[1::5] = y.astype(np.float32)
+    binary[2::5] = colors[:, 0]
+    binary[3::5] = colors[:, 1]
+    binary[4::5] = colors[:, 2]
+    await _broadcast_binary(binary.tobytes())
+    return {"ok": True}
 
 
 @app.get("/api/metrics")
