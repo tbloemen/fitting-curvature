@@ -121,6 +121,10 @@ def project_to_2d(
             X = _align_sphere_to_centroid(X)
             pole_axis = 0
 
+        spatial_axes = [a for a in range(X.shape[1]) if a != pole_axis]
+        x_proj = X[:, spatial_axes[i]]
+        y_proj = X[:, spatial_axes[j]]
+
         if projection == "stereographic":
             # Stereographic projection from pole (pole_axis = +r)
             # Centroid (at -e_0 after rotation) maps to origin
@@ -131,9 +135,8 @@ def project_to_2d(
             scale = r / denom
 
             # Spatial coordinates (all axes except pole)
-            spatial_axes = [a for a in range(X.shape[1]) if a != pole_axis]
-            x_proj = scale * X[:, spatial_axes[i]]
-            y_proj = scale * X[:, spatial_axes[j]]
+            x_proj = scale * x_proj
+            y_proj = scale * y_proj
 
             # Rescale to fit in unit circle
             max_dist = np.sqrt(x_proj**2 + y_proj**2).max()
@@ -147,13 +150,7 @@ def project_to_2d(
             # After rotation, south pole = centroid -> projection centered on data
             x0 = X[:, pole_axis]
             theta = np.arccos(np.clip(-x0 / r, -1.0, 1.0))  # angle from south pole
-
-            # Spatial coordinates for azimuthal angle
-            spatial_axes = [a for a in range(X.shape[1]) if a != pole_axis]
-            spatial_i = X[:, spatial_axes[i]]
-            spatial_j = X[:, spatial_axes[j]]
-
-            phi = np.arctan2(spatial_j, spatial_i)
+            phi = np.arctan2(y_proj, x_proj)
 
             # Project: radius proportional to angular distance
             scale_factor = 0.95 / (np.pi * r)
@@ -162,10 +159,6 @@ def project_to_2d(
 
         elif projection == "orthographic":
             # Orthographic: globe-like view looking along pole axis
-            spatial_axes = [a for a in range(X.shape[1]) if a != pole_axis]
-            x_proj = X[:, spatial_axes[i]]
-            y_proj = X[:, spatial_axes[j]]
-
             # Scale to fit in unit circle
             max_dist = np.sqrt(x_proj**2 + y_proj**2).max()
             if max_dist > 0:
