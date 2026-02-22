@@ -3,6 +3,60 @@ from matplotlib import pyplot as plt
 from matplotlib.patches import Circle
 
 
+def _align_sphere_to_centroid(X: np.ndarray) -> np.ndarray:
+    """Rotate spherical points so the data centroid aligns with -e_0 (south pole).
+
+    This ensures projections are centered on the data's center of mass,
+    regardless of the original coordinate orientation. Uses a Householder
+    reflection to map the centroid direction to -e_0.
+
+    Parameters
+    ----------
+    X : array, shape (N, d)
+        Points on a sphere in R^d.
+
+    Returns
+    -------
+    X_rotated : array, shape (N, d)
+        Rotated points with centroid direction at -e_0.
+    """
+    d = X.shape[1]
+    centroid = X.mean(axis=0)
+    centroid_norm = np.linalg.norm(centroid)
+    if centroid_norm < 1e-10:
+        # Data is roughly uniform/centered — no preferred direction.
+        # Fall back to axis with highest variance.
+        variances = X.var(axis=0)
+        # Use the axis with LOWEST variance as the pole (highest variance
+        # axes become the spatial/visible axes).
+        pole_idx = int(np.argmin(variances))
+        if pole_idx == 0:
+            return X  # already aligned
+        # Swap pole_idx with axis 0
+        X_swapped = X.copy()
+        X_swapped[:, 0] = X[:, pole_idx]
+        X_swapped[:, pole_idx] = X[:, 0]
+        return X_swapped
+
+    c = centroid / centroid_norm
+
+    # Householder reflection: H maps c -> -e_0
+    # H = I - 2 * vv^T / (v^T v)  where v = c + e_0
+    e0 = np.zeros(d)
+    e0[0] = 1.0
+    v = c + e0
+    v_dot = np.dot(v, v)
+    if v_dot < 1e-15:
+        # c ≈ -e_0 already, no rotation needed
+        return X
+
+    # Apply Householder: H @ x = x - 2 * v * (v^T x) / (v^T v)
+    vTX = X @ v  # (N,)
+    X_rotated = X - 2.0 * np.outer(vTX, v) / v_dot
+
+    return X_rotated
+
+
 def project_to_2d(
     X: np.ndarray,
     k: float,
@@ -19,12 +73,14 @@ def project_to_2d(
     X : array, shape (N, F)
         Input points in either Euclidean, spherical, or hyperbolic form.
     i, j : int
-        Indices of the two features to visualise.
+        Indices of the two spatial features to visualise (0-indexed, excluding pole).
     k : float
         Curvature. >0 spherical, 0 Euclidean, <0 hyperbolic.
     pole_axis : int or None
-        For spherical stereographic projection: the coordinate chosen as the projection pole.
-        If None, defaults to the first axis (0) for spherical.
+        For spherical projections: the coordinate chosen as the projection pole.
+        If None (default), uses data-driven alignment: rotates points so the
+        centroid direction becomes the pole axis, centering the projection on
+        where the data actually lives.
     projection : str
         Projection method for spherical embeddings (k > 0). Options:
         - "stereographic": Conformal projection (default)
@@ -41,10 +97,12 @@ def project_to_2d(
     Notes
     -----
     For k > 0 (spherical): Multiple projection methods available.
-        - Stereographic: Conformal but distorts distances near pole
-        - Azimuthal equidistant: Preserves radial distances from center
-        - Orthographic: Natural globe view, may hide back hemisphere
-        - Direct: Just uses spatial coordinates, simplest option
+        When pole_axis is None, the data is rotated so that the centroid
+        direction maps to the south pole (-e_0). This means:
+        - Stereographic projects from the antipodal point of the centroid,
+          centering the view on the data.
+        - Azimuthal equidistant preserves distances from the data center.
+        - Orthographic views the sphere from the centroid direction.
 
     For k = 0 (Euclidean): Directly uses two coordinates, rescaled to fit within the
         unit circle.
@@ -58,18 +116,24 @@ def project_to_2d(
         # Points live on sphere of radius r = 1/sqrt(k) in R^(d+1)
         r = 1.0 / np.sqrt(k)  # sphere radius
 
+        if pole_axis is None:
+            # Data-driven: rotate so centroid -> -e_0 (south pole)
+            X = _align_sphere_to_centroid(X)
+            pole_axis = 0
+
         if projection == "stereographic":
-            # Stereographic projection: conformal, maps to infinite plane
-            if pole_axis is None:
-                pole_axis = 0
+            # Stereographic projection from pole (pole_axis = +r)
+            # Centroid (at -e_0 after rotation) maps to origin
             z = X[:, pole_axis]  # coord used as pole
             denom = r - z
             # Avoid numerical blowups:
             denom = np.where(np.abs(denom) < 1e-12, 1e-12, denom)
             scale = r / denom
 
-            x_proj = scale * X[:, i + 1]
-            y_proj = scale * X[:, j + 1]
+            # Spatial coordinates (all axes except pole)
+            spatial_axes = [a for a in range(X.shape[1]) if a != pole_axis]
+            x_proj = scale * X[:, spatial_axes[i]]
+            y_proj = scale * X[:, spatial_axes[j]]
 
             # Rescale to fit in unit circle
             max_dist = np.sqrt(x_proj**2 + y_proj**2).max()
@@ -79,46 +143,28 @@ def project_to_2d(
                 y_proj *= scale_factor
 
         elif projection == "azimuthal_equidistant":
-            # Azimuthal equidistant: preserves distances from center point
-            # Center at "south pole" (x_0 = -r)
-            if pole_axis is None:
-                pole_axis = 0
-
-            # Angular distance from south pole
+            # Azimuthal equidistant: preserves distances from south pole
+            # After rotation, south pole = centroid -> projection centered on data
             x0 = X[:, pole_axis]
             theta = np.arccos(np.clip(-x0 / r, -1.0, 1.0))  # angle from south pole
 
-            # Get spatial coordinates for azimuthal angle
-            spatial_i = (
-                X[:, i + 1]
-                if i + 1 != pole_axis
-                else X[:, i + 2 if i + 2 < X.shape[1] else 1]
-            )
-            spatial_j = (
-                X[:, j + 1]
-                if j + 1 != pole_axis
-                else X[:, j + 2 if j + 2 < X.shape[1] else 1]
-            )
+            # Spatial coordinates for azimuthal angle
+            spatial_axes = [a for a in range(X.shape[1]) if a != pole_axis]
+            spatial_i = X[:, spatial_axes[i]]
+            spatial_j = X[:, spatial_axes[j]]
 
             phi = np.arctan2(spatial_j, spatial_i)
 
-            # Project: radius is proportional to angular distance
-            # Maximum theta is π (north pole), so max radius is πr
-            # Scale to fit in unit circle
+            # Project: radius proportional to angular distance
             scale_factor = 0.95 / (np.pi * r)
             x_proj = theta * np.cos(phi) * scale_factor * r
             y_proj = theta * np.sin(phi) * scale_factor * r
 
         elif projection == "orthographic":
-            # Orthographic: globe-like view, shows one hemisphere
-            # Simply use two spatial coordinates, points naturally bounded by r
-            x_proj = X[:, i + 1]
-            y_proj = X[:, j + 1]
-
-            # Optionally fade out points on back hemisphere
-            # (where x_pole_axis is positive, assuming viewing from negative side)
-            if pole_axis is None:
-                pole_axis = 0
+            # Orthographic: globe-like view looking along pole axis
+            spatial_axes = [a for a in range(X.shape[1]) if a != pole_axis]
+            x_proj = X[:, spatial_axes[i]]
+            y_proj = X[:, spatial_axes[j]]
 
             # Scale to fit in unit circle
             max_dist = np.sqrt(x_proj**2 + y_proj**2).max()
@@ -128,13 +174,11 @@ def project_to_2d(
                 y_proj *= scale_factor
 
         elif projection == "direct":
-            # Direct spatial coordinates: simplest option, naturally bounded
-            # Just use two spatial coordinates directly
-            x_proj = X[:, i + 1]
-            y_proj = X[:, j + 1]
+            # Direct spatial coordinates: simplest option
+            spatial_axes = [a for a in range(X.shape[1]) if a != pole_axis]
+            x_proj = X[:, spatial_axes[i]]
+            y_proj = X[:, spatial_axes[j]]
 
-            # Points on sphere of radius r satisfy: x_0^2 + x_1^2 + ... = r^2
-            # So each coordinate is bounded by [-r, r]
             # Scale to unit circle
             max_dist = np.sqrt(x_proj**2 + y_proj**2).max()
             if max_dist > 0:
