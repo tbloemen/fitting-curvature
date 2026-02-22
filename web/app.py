@@ -67,10 +67,9 @@ def _labels_to_rgb(labels: np.ndarray) -> np.ndarray:
     return colors
 
 
-def _get_boundary_points(curvature: float) -> list[float] | None:
-    if curvature == 0:
-        return None
-    theta = np.linspace(0, 2 * np.pi, 100)
+def _get_boundary_points(curvature: float) -> list[float]:
+    """Return unit circle boundary points for all curvatures (ring is always shown)."""
+    theta = np.linspace(0, 2 * np.pi, 101)
     points = []
     for t in theta:
         points.extend([float(np.cos(t)), float(np.sin(t))])
