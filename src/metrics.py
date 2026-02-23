@@ -484,7 +484,7 @@ def compute_all_metrics(
         high_dim_distances = squareform(pdist(high_dim_data))
 
     has_high_dist = high_dim_distances is not None
-    has_labels = labels is not None and len(np.unique(labels)) >= 2
+    # has_labels = labels is not None and len(np.unique(labels)) >= 2
 
     # --- A. Local structure preservation ---
     if high_dim_data is not None:
@@ -505,33 +505,33 @@ def compute_all_metrics(
     else:
         results["knn_overlap"] = None
 
-    # --- B. Global geometry preservation ---
-    if has_high_dist:
-        results["geodesic_distortion_gu"] = geodesic_distortion(
-            high_dim_distances, embedded_distances, LossType.GU2019
-        )
-        results["geodesic_distortion_mse"] = geodesic_distortion(
-            high_dim_distances, embedded_distances, LossType.MSE
-        )
-    else:
-        results["geodesic_distortion_gu"] = None
-        results["geodesic_distortion_mse"] = None
+    # # --- B. Global geometry preservation ---
+    # if has_high_dist:
+    #     results["geodesic_distortion_gu"] = geodesic_distortion(
+    #         high_dim_distances, embedded_distances, LossType.GU2019
+    #     )
+    #     results["geodesic_distortion_mse"] = geodesic_distortion(
+    #         high_dim_distances, embedded_distances, LossType.MSE
+    #     )
+    # else:
+    #     results["geodesic_distortion_gu"] = None
+    #     results["geodesic_distortion_mse"] = None
 
     # --- C. Space efficiency ---
     results["area_utilisation"] = area_utilisation(embeddings)
     results["radial_distribution"] = radial_distribution(embeddings)
 
     # --- D. Perceptual evaluation ---
-    if has_labels:
-        assert labels is not None
-        results["cluster_interpretability"] = cluster_interpretability(
-            embedded_distances, labels
-        )
-        results["davies_bouldin"] = davies_bouldin(embedded_distances, labels)
-        results["dunn_index"] = dunn_index(embedded_distances, labels)
-    else:
-        results["cluster_interpretability"] = None
-        results["davies_bouldin"] = None
-        results["dunn_index"] = None
+    # if has_labels:
+    #     assert labels is not None
+    #     results["cluster_interpretability"] = cluster_interpretability(
+    #         embedded_distances, labels
+    #     )
+    #     results["davies_bouldin"] = davies_bouldin(embedded_distances, labels)
+    #     results["dunn_index"] = dunn_index(embedded_distances, labels)
+    # else:
+    #     results["cluster_interpretability"] = None
+    #     results["davies_bouldin"] = None
+    #     results["dunn_index"] = None
 
     return results

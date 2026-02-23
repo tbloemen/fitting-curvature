@@ -351,14 +351,14 @@ def generate_hyperbolic_shells(n_samples: int) -> tuple[Tensor, Tensor, Tensor]:
 
 SYNTHETIC_DATASETS = {
     "uniform_grid": generate_uniform_grid,
-    "gaussian_blob": generate_gaussian_blob,
-    "concentric_circles": generate_concentric_circles,
+    # "gaussian_blob": generate_gaussian_blob,
+    # "concentric_circles": generate_concentric_circles,
     "uniform_sphere": generate_uniform_sphere,
-    "von_mises_fisher": generate_von_mises_fisher,
-    "antipodal_clusters": generate_antipodal_clusters,
+    # "von_mises_fisher": generate_von_mises_fisher,
+    # "antipodal_clusters": generate_antipodal_clusters,
     "uniform_hyperbolic": generate_uniform_hyperbolic,
-    "tree_structured": generate_tree_structured,
-    "hyperbolic_shells": generate_hyperbolic_shells,
+    # "tree_structured": generate_tree_structured,
+    # "hyperbolic_shells": generate_hyperbolic_shells,
 }
 
 

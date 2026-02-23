@@ -353,19 +353,19 @@
       continuity: "Continuity",
       knn_overlap: "k-NN Overlap",
     },
-    "Global Geometry Preservation": {
-      geodesic_distortion_gu: "Geodesic Distortion (Gu et al.)",
-      geodesic_distortion_mse: "Geodesic Distortion (MSE)",
-    },
+    // "Global Geometry Preservation": {
+    //   geodesic_distortion_gu: "Geodesic Distortion (Gu et al.)",
+    //   geodesic_distortion_mse: "Geodesic Distortion (MSE)",
+    // },
     "Space Efficiency": {
       area_utilisation: "Area Utilisation",
       radial_distribution: "Radial Distribution",
     },
-    "Perceptual Evaluation": {
-      cluster_interpretability: "Silhouette Score",
-      davies_bouldin: "Davies-Bouldin Index",
-      dunn_index: "Dunn Index",
-    },
+    // "Perceptual Evaluation": {
+    //   cluster_interpretability: "Silhouette Score",
+    //   davies_bouldin: "Davies-Bouldin Index",
+    //   dunn_index: "Dunn Index",
+    // },
   };
 
   function formatMetricValue(key, value) {
