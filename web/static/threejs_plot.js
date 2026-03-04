@@ -23,13 +23,14 @@ const ThreeJSPlot = (function () {
 
   // Spherical grid settings
   var sphericalMeridians = 12; // number of radial lines (every 30°)
-  var boundaryR = 0.95; // matches projection scale in visualisation.py
+  var boundaryR = 1.0; // updated dynamically from Python projection scale
 
   // Store last data for SVG export
   let lastPositions = null;
   let lastColors = null;
   let lastBoundaryVisible = false;
   let lastTitle = "";
+  var lastBoundaryR = 1.0;
 
   /**
    * Compute projected radii for spherical parallels given the projection type.
@@ -161,13 +162,12 @@ const ThreeJSPlot = (function () {
         }
       }
 
-      // Radial meridians (out to outermost visible circle)
-      var maxR = circles.length > 0 ? circles[circles.length - 1].r : boundaryR;
+      // Radial meridians (out to boundary circle)
       for (var mi = 0; mi < sphericalMeridians; mi++) {
         var angle = (2 * Math.PI * mi) / sphericalMeridians;
         var dx = Math.cos(angle);
         var dy = Math.sin(angle);
-        gridVerts.push(0, 0, -0.2, dx * maxR, dy * maxR, -0.2);
+        gridVerts.push(0, 0, -0.2, dx, dy, -0.2);
       }
     } else if (isHyperbolic) {
       var ticks = hyperbolicTicks;
@@ -208,12 +208,10 @@ const ThreeJSPlot = (function () {
     // --- Axis lines ---
     var axisVerts = [];
     if (isSpherical) {
-      // Two perpendicular diameters as axes, extending to outermost circle
-      var circles = sphericalGridCircles(projection);
-      var axisR = circles.length > 0 ? circles[circles.length - 1].r : boundaryR;
+      // Two perpendicular diameters as axes, extending to boundary circle
       axisVerts.push(
-        -axisR, 0, -0.1, axisR, 0, -0.1,
-         0, -axisR, -0.1, 0, axisR, -0.1
+        -1, 0, -0.1, 1, 0, -0.1,
+         0, -1, -0.1, 0, 1, -0.1
       );
     } else {
       axisVerts.push(
@@ -394,11 +392,13 @@ const ThreeJSPlot = (function () {
     }
   }
 
-  function setCurvature(k, projection) {
+  function setCurvature(k, projection, newBoundaryR) {
     projection = projection || null;
-    if (k === lastCurvature && projection === lastProjection) return;
+    if (typeof newBoundaryR === "number") boundaryR = newBoundaryR;
+    if (k === lastCurvature && projection === lastProjection && boundaryR === lastBoundaryR) return;
     lastCurvature = k;
     lastProjection = projection;
+    lastBoundaryR = boundaryR;
     if (scene) buildGrid(k, projection);
   }
 
@@ -506,12 +506,11 @@ const ThreeJSPlot = (function () {
           '<circle cx="0" cy="0" r="' + circles[ci].r.toFixed(5) + '" fill="none" stroke="#ddd" stroke-width="0.005"/>'
         );
       }
-      // Radial meridians
-      var maxR = circles.length > 0 ? circles[circles.length - 1].r : boundaryR;
+      // Radial meridians (out to boundary circle)
       for (var mi = 0; mi < sphericalMeridians; mi++) {
         var angle = (2 * Math.PI * mi) / sphericalMeridians;
-        var ex = (Math.cos(angle) * maxR).toFixed(5);
-        var ey = (-Math.sin(angle) * maxR).toFixed(5); // SVG y-flip
+        var ex = Math.cos(angle).toFixed(5);
+        var ey = (-Math.sin(angle)).toFixed(5); // SVG y-flip
         parts.push(
           '<line x1="0" y1="0" x2="' + ex + '" y2="' + ey + '" stroke="#ddd" stroke-width="0.005"/>'
         );
@@ -561,13 +560,11 @@ const ThreeJSPlot = (function () {
   function svgAxisElements(k, pad, projection) {
     var parts = [];
     if (k > 0) {
-      var circles = sphericalGridCircles(projection);
-      var axisR = circles.length > 0 ? circles[circles.length - 1].r : boundaryR;
       parts.push(
-        '<line x1="' + (-axisR) + '" y1="0" x2="' + axisR + '" y2="0" stroke="#999" stroke-width="0.008"/>'
+        '<line x1="-1" y1="0" x2="1" y2="0" stroke="#999" stroke-width="0.008"/>'
       );
       parts.push(
-        '<line x1="0" y1="' + (-axisR) + '" x2="0" y2="' + axisR + '" stroke="#999" stroke-width="0.008"/>'
+        '<line x1="0" y1="-1" x2="0" y2="1" stroke="#999" stroke-width="0.008"/>'
       );
     } else {
       parts.push(

@@ -122,7 +122,15 @@ def _training_update_callback(
     if state.embeddings is not None and state.labels is not None:
         k = state.curvature
         projection = state.projection
-        x, y = project_to_2d(state.embeddings, k=k, i=0, j=1, projection=projection)
+        x, y, boundary_r = project_to_2d(
+            state.embeddings,
+            k=k,
+            i=0,
+            j=1,
+            projection=projection,
+            return_boundary_r=True,
+        )
+        json_msg["boundary_r"] = boundary_r
         colors = _labels_to_rgb(state.labels)
         # Interleave: [x0, y0, r0, g0, b0, x1, y1, r1, g1, b1, ...]
         n = len(x)
@@ -256,7 +264,14 @@ async def reproject(body: dict):
     training_manager.state.projection = projection
 
     k = state.curvature
-    x, y = project_to_2d(state.embeddings, k=k, i=0, j=1, projection=projection)
+    x, y, boundary_r = project_to_2d(
+        state.embeddings,
+        k=k,
+        i=0,
+        j=1,
+        projection=projection,
+        return_boundary_r=True,
+    )
     colors = _labels_to_rgb(state.labels)
     n = len(x)
     binary = np.empty(n * 5, dtype=np.float32)
@@ -274,6 +289,7 @@ async def reproject(body: dict):
             "points": boundary,
             "curvature": k,
             "projection": projection,
+            "boundary_r": boundary_r,
         }
     )
     await _broadcast_binary(binary.tobytes())

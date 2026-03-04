@@ -1,10 +1,10 @@
 [data]
-dataset = "uniform_sphere"
+dataset = "mnist"
 n_samples = 50
 
 [embedding]
 embed_dim = 2
-n_iterations = 500
+n_iterations = 300
 init_method = "pca"
 perplexity = 30
 early_exaggeration_iterations = 250
@@ -22,7 +22,7 @@ curvatures = [ 1,]
 n_neighbors = 5
 
 [visualization]
-spherical_projection = "azimuthal_equidistant"
+spherical_projection = "stereographic"
 
 [hyperparameters.learning_rates]
 k = 200
