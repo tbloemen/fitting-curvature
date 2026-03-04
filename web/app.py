@@ -115,6 +115,7 @@ def _training_update_callback(
         "loss": loss,
         "phase": phase,
         "curvature": state.curvature,
+        "projection": state.projection,
     }
 
     # Prepare binary data: project embeddings to 2D, interleave with colors
@@ -214,11 +215,15 @@ async def start_training(config: dict):
         curvatures = config["experiments"]["curvatures"]
         curvature = curvatures[0] if curvatures else 0
         boundary = _get_boundary_points(curvature)
+        projection = config.get("visualization", {}).get(
+            "spherical_projection", "stereographic"
+        )
         await _broadcast_json(
             {
                 "type": "boundary",
                 "points": boundary,
                 "curvature": curvature,
+                "projection": projection,
             }
         )
 
@@ -260,6 +265,17 @@ async def reproject(body: dict):
     binary[2::5] = colors[:, 0]
     binary[3::5] = colors[:, 1]
     binary[4::5] = colors[:, 2]
+
+    # Notify frontend of projection change so grid can update
+    boundary = _get_boundary_points(k)
+    await _broadcast_json(
+        {
+            "type": "boundary",
+            "points": boundary,
+            "curvature": k,
+            "projection": projection,
+        }
+    )
     await _broadcast_binary(binary.tobytes())
     return {"ok": True}
 
