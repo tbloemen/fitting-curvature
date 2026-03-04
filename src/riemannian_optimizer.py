@@ -138,28 +138,28 @@ class RiemannianSGDMomentum(RiemannianSGD):
         Parallel transport velocity from tangent space at x_old to x_new (hyperboloid).
 
         Uses the closed-form formula for parallel transport along geodesics
-        on the hyperboloid with Lorentzian metric.
+        on the hyperboloid with Lorentzian metric (He, 2024, Eq. 5):
 
-        Formula: v_transported = v + <x_old, v>_L * (x_old + x_new) / (1 - <x_old, x_new>_L / r²)
+        Formula: v_transported = v + <x_new, v>_L / (r² - <x_old, x_new>_L) * (x_old + x_new)
         """
         r_sq = self.manifold.radius_squared
 
         # Lorentzian inner product: <a, b>_L = -a_0*b_0 + a_spatial · b_spatial
-        inner_old_v = -x_old[..., 0:1] * v[..., 0:1] + (
-            x_old[..., 1:] * v[..., 1:]
+        inner_new_v = -x_new[..., 0:1] * v[..., 0:1] + (
+            x_new[..., 1:] * v[..., 1:]
         ).sum(dim=-1, keepdim=True)
 
         inner_old_new = -x_old[..., 0:1] * x_new[..., 0:1] + (
             x_old[..., 1:] * x_new[..., 1:]
         ).sum(dim=-1, keepdim=True)
 
-        # Denominator: 1 - <x_old, x_new>_L / r²
-        # For points on hyperboloid, <x_old, x_new>_L <= -r², so this is >= 2
-        denom = 1.0 - inner_old_new / r_sq
+        # Denominator: r² - <x_old, x_new>_L
+        # For points on hyperboloid, <x_old, x_new>_L <= -r², so this is >= 2r²
+        denom = r_sq - inner_old_new
         denom = torch.clamp(denom, min=1e-8)  # Numerical stability
 
         # Parallel transport formula
-        v_transported = v + inner_old_v * (x_old + x_new) / denom
+        v_transported = v + inner_new_v / denom * (x_old + x_new)
 
         # Project to tangent space at x_new for numerical stability
         inner_new_v = -x_new[..., 0:1] * v_transported[..., 0:1] + (
@@ -176,24 +176,23 @@ class RiemannianSGDMomentum(RiemannianSGD):
         Parallel transport velocity from tangent space at x_old to x_new (sphere).
 
         Uses the closed-form formula for parallel transport along geodesics
-        on the sphere.
+        on the sphere:
 
-        Formula: v_transported = v - (<x_old, v> + <x_new, v>) / (1 + <x_old, x_new> / r²) * (x_old + x_new)
+        Formula: v_transported = v - <x_new, v> / (r² + <x_old, x_new>) * (x_old + x_new)
         """
         r_sq = self.manifold.radius_squared
 
         # Standard inner products
         inner_old_new = (x_old * x_new).sum(dim=-1, keepdim=True)
-        inner_old_v = (x_old * v).sum(dim=-1, keepdim=True)
         inner_new_v = (x_new * v).sum(dim=-1, keepdim=True)
 
-        # Denominator: 1 + <x_old, x_new> / r²
-        # For points on sphere, -r² <= <x_old, x_new> <= r², so this is in [0, 2]
-        denom = 1.0 + inner_old_new / r_sq
+        # Denominator: r² + <x_old, x_new>
+        # For points on sphere, -r² <= <x_old, x_new> <= r², so this is in [0, 2r²]
+        denom = r_sq + inner_old_new
         denom = torch.clamp(denom, min=1e-8)  # Numerical stability
 
         # Parallel transport formula
-        v_transported = v - (inner_old_v + inner_new_v) / denom * (x_old + x_new)
+        v_transported = v - inner_new_v / denom * (x_old + x_new)
 
         # Project to tangent space at x_new for numerical stability
         inner_new_transported = (x_new * v_transported).sum(dim=-1, keepdim=True)
