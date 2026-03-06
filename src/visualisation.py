@@ -64,7 +64,8 @@ def project_to_2d(
     j: int = 1,
     pole_axis: int | None = None,
     projection: str = "stereographic",
-) -> tuple[np.ndarray, np.ndarray]:
+    return_boundary_r: bool = False,
+) -> tuple[np.ndarray, np.ndarray] | tuple[np.ndarray, np.ndarray, float]:
     """
     Project F-dimensional constant-curvature points onto 2D using two coordinates.
 
@@ -137,12 +138,18 @@ def project_to_2d(
             x_proj = scale * x_proj
             y_proj = scale * y_proj
 
-            # Rescale to fit in unit circle
+            # Natural normalization: equator (θ=π/2) maps to radius 1
+            x_proj /= r
+            y_proj /= r
+
+            # Data-dependent rescaling to fit in unit circle
             max_dist = np.sqrt(x_proj**2 + y_proj**2).max()
             if max_dist > 0:
-                scale_factor = 0.95 / max_dist
-                x_proj *= scale_factor
-                y_proj *= scale_factor
+                boundary_r = 1.0 / max_dist
+                x_proj /= max_dist
+                y_proj /= max_dist
+            else:
+                boundary_r = 1.0
 
         elif projection == "azimuthal_equidistant":
             # Azimuthal equidistant: preserves distances from south pole
@@ -152,18 +159,17 @@ def project_to_2d(
             phi = np.arctan2(y_proj, x_proj)
 
             # Project: radius proportional to angular distance
-            scale_factor = 0.95 / (np.pi * r)
+            scale_factor = 1.0 / (np.pi * r)
             x_proj = theta * np.cos(phi) * scale_factor * r
             y_proj = theta * np.sin(phi) * scale_factor * r
+            boundary_r = 1.0
 
         elif projection == "orthographic":
             # Orthographic: globe-like view looking along pole axis
-            # Scale to fit in unit circle
-            max_dist = np.sqrt(x_proj**2 + y_proj**2).max()
-            if max_dist > 0:
-                scale_factor = 0.95 / max_dist
-                x_proj *= scale_factor
-                y_proj *= scale_factor
+            # Normalize so equator maps to radius 1
+            x_proj /= r
+            y_proj /= r
+            boundary_r = 1.0
 
         else:
             raise ValueError(
@@ -171,6 +177,8 @@ def project_to_2d(
                 f"Choose from: stereographic, azimuthal_equidistant, orthographic"
             )
 
+        if return_boundary_r:
+            return x_proj, y_proj, boundary_r
         return x_proj, y_proj
 
     elif k == 0:
@@ -181,10 +189,12 @@ def project_to_2d(
         # Rescale to fit in unit circle
         max_dist = np.sqrt(x_proj**2 + y_proj**2).max()
         if max_dist > 0:
-            scale_factor = 0.95 / max_dist  # 0.95 to leave small margin
+            scale_factor = 1.0 / max_dist
             x_proj *= scale_factor
             y_proj *= scale_factor
 
+        if return_boundary_r:
+            return x_proj, y_proj, 1.0
         return x_proj, y_proj
 
     else:
@@ -197,7 +207,11 @@ def project_to_2d(
         denom = x0 + r
         denom = np.where(np.abs(denom) < 1e-12, 1e-12, denom)
 
-        return X[:, i + 1] / denom, X[:, j + 1] / denom
+        x_proj = X[:, i + 1] / denom
+        y_proj = X[:, j + 1] / denom
+        if return_boundary_r:
+            return x_proj, y_proj, 1.0
+        return x_proj, y_proj
 
 
 def default_plot(x, y, labels=None):

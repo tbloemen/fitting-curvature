@@ -115,13 +115,22 @@ def _training_update_callback(
         "loss": loss,
         "phase": phase,
         "curvature": state.curvature,
+        "projection": state.projection,
     }
 
     # Prepare binary data: project embeddings to 2D, interleave with colors
     if state.embeddings is not None and state.labels is not None:
         k = state.curvature
         projection = state.projection
-        x, y = project_to_2d(state.embeddings, k=k, i=0, j=1, projection=projection)
+        x, y, boundary_r = project_to_2d(
+            state.embeddings,
+            k=k,
+            i=0,
+            j=1,
+            projection=projection,
+            return_boundary_r=True,
+        )
+        json_msg["boundary_r"] = boundary_r
         colors = _labels_to_rgb(state.labels)
         # Interleave: [x0, y0, r0, g0, b0, x1, y1, r1, g1, b1, ...]
         n = len(x)
@@ -214,11 +223,15 @@ async def start_training(config: dict):
         curvatures = config["experiments"]["curvatures"]
         curvature = curvatures[0] if curvatures else 0
         boundary = _get_boundary_points(curvature)
+        projection = config.get("visualization", {}).get(
+            "spherical_projection", "stereographic"
+        )
         await _broadcast_json(
             {
                 "type": "boundary",
                 "points": boundary,
                 "curvature": curvature,
+                "projection": projection,
             }
         )
 
@@ -251,7 +264,14 @@ async def reproject(body: dict):
     training_manager.state.projection = projection
 
     k = state.curvature
-    x, y = project_to_2d(state.embeddings, k=k, i=0, j=1, projection=projection)
+    x, y, boundary_r = project_to_2d(
+        state.embeddings,
+        k=k,
+        i=0,
+        j=1,
+        projection=projection,
+        return_boundary_r=True,
+    )
     colors = _labels_to_rgb(state.labels)
     n = len(x)
     binary = np.empty(n * 5, dtype=np.float32)
@@ -260,6 +280,18 @@ async def reproject(body: dict):
     binary[2::5] = colors[:, 0]
     binary[3::5] = colors[:, 1]
     binary[4::5] = colors[:, 2]
+
+    # Notify frontend of projection change so grid can update
+    boundary = _get_boundary_points(k)
+    await _broadcast_json(
+        {
+            "type": "boundary",
+            "points": boundary,
+            "curvature": k,
+            "projection": projection,
+            "boundary_r": boundary_r,
+        }
+    )
     await _broadcast_binary(binary.tobytes())
     return {"ok": True}
 
