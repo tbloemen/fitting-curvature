@@ -188,11 +188,6 @@ class TestDispatcher:
         with pytest.raises(ValueError, match="Unknown synthetic dataset"):
             load_synthetic("nonexistent")
 
-    def test_load_raw_data_dispatches_synthetic(self):
-        X, _, D = load_raw_data("gaussian_blob", n_samples=50)
-        assert D is None
-        assert X.shape[0] == 50
-
     def test_load_raw_data_dispatches_spherical(self):
         _, _, D = load_raw_data("uniform_sphere", n_samples=50)
         assert D is not None

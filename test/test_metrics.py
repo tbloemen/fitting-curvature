@@ -257,13 +257,8 @@ class TestComputeAllMetrics:
             "trustworthiness",
             "continuity",
             "knn_overlap",
-            "geodesic_distortion_gu",
-            "geodesic_distortion_mse",
             "area_utilisation",
             "radial_distribution",
-            "cluster_interpretability",
-            "davies_bouldin",
-            "dunn_index",
         }
         assert set(result.keys()) == expected_keys
 
@@ -288,9 +283,6 @@ class TestComputeAllMetrics:
             high_dim_distances=high_dist,
             labels=None,
         )
-        assert result["cluster_interpretability"] is None
-        assert result["davies_bouldin"] is None
-        assert result["dunn_index"] is None
         # Non-label metrics should still work
         assert result["trustworthiness"] is not None
         assert result["knn_overlap"] is not None
@@ -308,7 +300,6 @@ class TestComputeAllMetrics:
         assert result["continuity"] is None
         # Distance-based metrics should still work
         assert result["knn_overlap"] is not None
-        assert result["geodesic_distortion_gu"] is not None
 
     def test_without_any_high_dim(self, identity_embedding):
         _, embedded, _, embed_dist, labels = identity_embedding
@@ -321,8 +312,6 @@ class TestComputeAllMetrics:
         )
         # All metrics needing high-dim should be None
         assert result["knn_overlap"] is None
-        assert result["geodesic_distortion_gu"] is None
-        assert result["geodesic_distortion_mse"] is None
         # Space efficiency metrics should still work
         assert result["area_utilisation"] is not None
         assert result["radial_distribution"] is not None
@@ -339,4 +328,3 @@ class TestComputeAllMetrics:
         )
         # Should compute distances from data and produce results
         assert result["knn_overlap"] is not None
-        assert result["geodesic_distortion_gu"] is not None

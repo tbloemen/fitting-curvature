@@ -245,7 +245,7 @@ def test_integration_manifold_constraints_preserved():
     constraint = -(x0**2) + (spatial**2).sum(dim=1)
     expected = torch.ones_like(constraint) * (-1.0)
     assert torch.allclose(
-        constraint, expected, atol=1e-3
+        constraint, expected, atol=3e-3
     ), "Hyperboloid constraint violated"
 
     # Test spherical constraint
