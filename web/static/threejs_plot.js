@@ -458,6 +458,10 @@ const ThreeJSPlot = (function () {
 
   /**
    * Update embedding points.
+   * @param {Float32Array} positions - flat [x0,y0,x1,y1,...] (2 floats per point)
+   * @param {Float32Array} colors - flat [r0,g0,b0,r1,g1,b1,...] (3 floats per point)
+   * @param {Float32Array|null} boundary - flat [x0,y0,x1,y1,...] boundary circle points
+   * @param {string} title - title text
    */
   function updatePlot(positions, colors, boundary, title) {
     if (!pointsGeometry) return;
