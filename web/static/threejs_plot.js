@@ -47,18 +47,19 @@ const ThreeJSPlot = (function () {
   function sphericalGridCircles(projection) {
     // Parallels every 30° from the projection centre.
     // For orthographic (visible hemisphere only) use 15° spacing for more lines.
-    var isOrtho = (projection !== "stereographic" && projection !== "azimuthal_equidistant");
+    var isOrtho =
+      projection !== "stereographic" && projection !== "azimuthal_equidistant";
     var step = isOrtho ? 15 : 30;
     var maxAngle = isOrtho ? 90 : 150;
     var circles = [];
 
     for (var deg = step; deg <= maxAngle; deg += step) {
-      var theta = deg * Math.PI / 180;
+      var theta = (deg * Math.PI) / 180;
       var r;
       if (projection === "stereographic") {
         r = boundaryR * Math.tan(theta / 2);
       } else if (projection === "azimuthal_equidistant") {
-        r = boundaryR * theta / Math.PI;
+        r = (boundaryR * theta) / Math.PI;
       } else {
         // orthographic
         r = boundaryR * Math.sin(theta);
@@ -84,8 +85,15 @@ const ThreeJSPlot = (function () {
   function poincareGeodesicArc(a, isVertical, numSegments) {
     if (Math.abs(a) < 1e-10) {
       // Through origin — a diameter (already a geodesic)
-      if (isVertical) return [[0, -1], [0, 1]];
-      return [[-1, 0], [1, 0]];
+      if (isVertical)
+        return [
+          [0, -1],
+          [0, 1],
+        ];
+      return [
+        [-1, 0],
+        [1, 0],
+      ];
     }
 
     var a2 = a * a;
@@ -94,22 +102,30 @@ const ThreeJSPlot = (function () {
     var p1x, p1y, p2x, p2y, refX, refY;
 
     if (isVertical) {
-      cx = (1 + a2) / (2 * a);  cy = 0;
-      p1x = 2 * a / (1 + a2);   p1y =  (1 - a2) / (1 + a2);
-      p2x = p1x;                 p2y = -p1y;
-      refX = a;                  refY = 0;
+      cx = (1 + a2) / (2 * a);
+      cy = 0;
+      p1x = (2 * a) / (1 + a2);
+      p1y = (1 - a2) / (1 + a2);
+      p2x = p1x;
+      p2y = -p1y;
+      refX = a;
+      refY = 0;
     } else {
-      cx = 0;                    cy = (1 + a2) / (2 * a);
-      p1x =  (1 - a2) / (1 + a2); p1y = 2 * a / (1 + a2);
-      p2x = -p1x;                  p2y = p1y;
-      refX = 0;                     refY = a;
+      cx = 0;
+      cy = (1 + a2) / (2 * a);
+      p1x = (1 - a2) / (1 + a2);
+      p1y = (2 * a) / (1 + a2);
+      p2x = -p1x;
+      p2y = p1y;
+      refX = 0;
+      refY = a;
     }
     R = Math.abs(1 - a2) / (2 * Math.abs(a));
 
     // Angles (relative to circle centre) of the two boundary points and the
     // reference point that the arc must pass through.
-    var alpha1   = Math.atan2(p1y - cy, p1x - cx);
-    var alpha2   = Math.atan2(p2y - cy, p2x - cx);
+    var alpha1 = Math.atan2(p1y - cy, p1x - cx);
+    var alpha2 = Math.atan2(p2y - cy, p2x - cx);
     var alphaRef = Math.atan2(refY - cy, refX - cx);
 
     // Normalise alpha1 and alpha2 into the window [alphaRef − π, alphaRef + π)
@@ -123,11 +139,11 @@ const ThreeJSPlot = (function () {
     alpha2 = normAngle(alpha2, alphaRef);
 
     var startAngle = Math.min(alpha1, alpha2);
-    var endAngle   = Math.max(alpha1, alpha2);
+    var endAngle = Math.max(alpha1, alpha2);
 
     var points = [];
     for (var i = 0; i <= numSegments; i++) {
-      var t = startAngle + (endAngle - startAngle) * i / numSegments;
+      var t = startAngle + ((endAngle - startAngle) * i) / numSegments;
       points.push([cx + R * Math.cos(t), cy + R * Math.sin(t)]);
     }
     return points;
@@ -138,8 +154,14 @@ const ThreeJSPlot = (function () {
    */
   function buildGrid(k, projection) {
     // Remove old meshes
-    if (gridMesh) { scene.remove(gridMesh); gridMesh = null; }
-    if (axisMesh) { scene.remove(axisMesh); axisMesh = null; }
+    if (gridMesh) {
+      scene.remove(gridMesh);
+      gridMesh = null;
+    }
+    if (axisMesh) {
+      scene.remove(axisMesh);
+      axisMesh = null;
+    }
 
     var isHyperbolic = k < 0;
     var isSpherical = k > 0;
@@ -156,8 +178,12 @@ const ThreeJSPlot = (function () {
           var t1 = (2 * Math.PI * i) / ARC_SEGMENTS;
           var t2 = (2 * Math.PI * (i + 1)) / ARC_SEGMENTS;
           gridVerts.push(
-            r * Math.cos(t1), r * Math.sin(t1), -0.2,
-            r * Math.cos(t2), r * Math.sin(t2), -0.2
+            r * Math.cos(t1),
+            r * Math.sin(t1),
+            -0.2,
+            r * Math.cos(t2),
+            r * Math.sin(t2),
+            -0.2,
           );
         }
       }
@@ -200,8 +226,14 @@ const ThreeJSPlot = (function () {
 
     if (gridVerts.length > 0) {
       var gridGeom = new THREE.BufferGeometry();
-      gridGeom.setAttribute("position", new THREE.Float32BufferAttribute(gridVerts, 3));
-      gridMesh = new THREE.LineSegments(gridGeom, new THREE.LineBasicMaterial({ color: 0xdddddd }));
+      gridGeom.setAttribute(
+        "position",
+        new THREE.Float32BufferAttribute(gridVerts, 3),
+      );
+      gridMesh = new THREE.LineSegments(
+        gridGeom,
+        new THREE.LineBasicMaterial({ color: 0xdddddd }),
+      );
       scene.add(gridMesh);
     }
 
@@ -209,19 +241,32 @@ const ThreeJSPlot = (function () {
     var axisVerts = [];
     if (isSpherical) {
       // Two perpendicular diameters as axes, extending to boundary circle
-      axisVerts.push(
-        -1, 0, -0.1, 1, 0, -0.1,
-         0, -1, -0.1, 0, 1, -0.1
-      );
+      axisVerts.push(-1, 0, -0.1, 1, 0, -0.1, 0, -1, -0.1, 0, 1, -0.1);
     } else {
       axisVerts.push(
-        -gridExtent, 0, -0.1, gridExtent, 0, -0.1,
-        0, -gridExtent, -0.1, 0, gridExtent, -0.1
+        -gridExtent,
+        0,
+        -0.1,
+        gridExtent,
+        0,
+        -0.1,
+        0,
+        -gridExtent,
+        -0.1,
+        0,
+        gridExtent,
+        -0.1,
       );
     }
     var axisGeom = new THREE.BufferGeometry();
-    axisGeom.setAttribute("position", new THREE.Float32BufferAttribute(axisVerts, 3));
-    axisMesh = new THREE.LineSegments(axisGeom, new THREE.LineBasicMaterial({ color: 0x999999 }));
+    axisGeom.setAttribute(
+      "position",
+      new THREE.Float32BufferAttribute(axisVerts, 3),
+    );
+    axisMesh = new THREE.LineSegments(
+      axisGeom,
+      new THREE.LineBasicMaterial({ color: 0x999999 }),
+    );
     scene.add(axisMesh);
 
     // --- Tick labels ---
@@ -235,14 +280,14 @@ const ThreeJSPlot = (function () {
       // fan out and never overlap, even when circles are close together.
       var circles = sphericalGridCircles(projection);
       // Labels sit between two meridians; spread across 45° arc in top-right
-      var labelAngleStart = 10 * Math.PI / 180;
-      var labelAngleStep = circles.length > 1
-        ? (35 * Math.PI / 180) / (circles.length - 1)
-        : 0;
+      var labelAngleStart = (10 * Math.PI) / 180;
+      var labelAngleStep =
+        circles.length > 1 ? (35 * Math.PI) / 180 / (circles.length - 1) : 0;
       for (var ci = 0; ci < circles.length; ci++) {
         var phi = labelAngleStart + ci * labelAngleStep;
         var label = document.createElement("div");
-        label.style.cssText = "position:absolute;font-size:10px;color:#999;pointer-events:none;font-family:Arial,sans-serif;";
+        label.style.cssText =
+          "position:absolute;font-size:10px;color:#999;pointer-events:none;font-family:Arial,sans-serif;";
         label.textContent = circles[ci].label;
         label._worldX = circles[ci].r * Math.cos(phi);
         label._worldY = circles[ci].r * Math.sin(phi);
@@ -252,11 +297,14 @@ const ThreeJSPlot = (function () {
         tickLabelDivs.push(label);
       }
     } else {
-      var labelTicks = isHyperbolic ? [-0.75, -0.5, -0.25, 0.25, 0.5, 0.75] : [-1, -0.5, 0.5, 1];
+      var labelTicks = isHyperbolic
+        ? [-0.75, -0.5, -0.25, 0.25, 0.5, 0.75]
+        : [-1, -0.5, 0.5, 1];
       for (var ti = 0; ti < labelTicks.length; ti++) {
         var v = labelTicks[ti];
         var xLabel = document.createElement("div");
-        xLabel.style.cssText = "position:absolute;font-size:10px;color:#999;pointer-events:none;font-family:Arial,sans-serif;";
+        xLabel.style.cssText =
+          "position:absolute;font-size:10px;color:#999;pointer-events:none;font-family:Arial,sans-serif;";
         xLabel.textContent = v.toString();
         xLabel._worldX = v;
         xLabel._worldY = 0;
@@ -266,7 +314,8 @@ const ThreeJSPlot = (function () {
         tickLabelDivs.push(xLabel);
 
         var yLabel = document.createElement("div");
-        yLabel.style.cssText = "position:absolute;font-size:10px;color:#999;pointer-events:none;font-family:Arial,sans-serif;";
+        yLabel.style.cssText =
+          "position:absolute;font-size:10px;color:#999;pointer-events:none;font-family:Arial,sans-serif;";
         yLabel.textContent = v.toString();
         yLabel._worldX = 0;
         yLabel._worldY = v;
@@ -395,7 +444,12 @@ const ThreeJSPlot = (function () {
   function setCurvature(k, projection, newBoundaryR) {
     projection = projection || null;
     if (typeof newBoundaryR === "number") boundaryR = newBoundaryR;
-    if (k === lastCurvature && projection === lastProjection && boundaryR === lastBoundaryR) return;
+    if (
+      k === lastCurvature &&
+      projection === lastProjection &&
+      boundaryR === lastBoundaryR
+    )
+      return;
     lastCurvature = k;
     lastProjection = projection;
     lastBoundaryR = boundaryR;
@@ -503,7 +557,9 @@ const ThreeJSPlot = (function () {
       // Concentric circles
       for (var ci = 0; ci < circles.length; ci++) {
         parts.push(
-          '<circle cx="0" cy="0" r="' + circles[ci].r.toFixed(5) + '" fill="none" stroke="#ddd" stroke-width="0.005"/>'
+          '<circle cx="0" cy="0" r="' +
+            circles[ci].r.toFixed(5) +
+            '" fill="none" stroke="#ddd" stroke-width="0.005"/>',
         );
       }
       // Radial meridians (out to boundary circle)
@@ -512,7 +568,11 @@ const ThreeJSPlot = (function () {
         var ex = Math.cos(angle).toFixed(5);
         var ey = (-Math.sin(angle)).toFixed(5); // SVG y-flip
         parts.push(
-          '<line x1="0" y1="0" x2="' + ex + '" y2="' + ey + '" stroke="#ddd" stroke-width="0.005"/>'
+          '<line x1="0" y1="0" x2="' +
+            ex +
+            '" y2="' +
+            ey +
+            '" stroke="#ddd" stroke-width="0.005"/>',
         );
       }
     } else if (isHyperbolic) {
@@ -527,7 +587,11 @@ const ThreeJSPlot = (function () {
           hStr += hPts[i][0].toFixed(5) + "," + (-hPts[i][1]).toFixed(5);
           if (i < hPts.length - 1) hStr += " ";
         }
-        parts.push('<polyline points="' + hStr + '" fill="none" stroke="#ddd" stroke-width="0.005"/>');
+        parts.push(
+          '<polyline points="' +
+            hStr +
+            '" fill="none" stroke="#ddd" stroke-width="0.005"/>',
+        );
 
         // Vertical geodesic
         var vPts = poincareGeodesicArc(v, true, ARC_SEGMENTS);
@@ -536,7 +600,11 @@ const ThreeJSPlot = (function () {
           vStr += vPts[i][0].toFixed(5) + "," + (-vPts[i][1]).toFixed(5);
           if (i < vPts.length - 1) vStr += " ";
         }
-        parts.push('<polyline points="' + vStr + '" fill="none" stroke="#ddd" stroke-width="0.005"/>');
+        parts.push(
+          '<polyline points="' +
+            vStr +
+            '" fill="none" stroke="#ddd" stroke-width="0.005"/>',
+        );
       }
     } else {
       var ticks = euclideanTicks;
@@ -544,10 +612,26 @@ const ThreeJSPlot = (function () {
         var v = ticks[ti];
         if (Math.abs(v) < 1e-10) continue;
         parts.push(
-          '<line x1="' + (-pad) + '" y1="' + v + '" x2="' + pad + '" y2="' + v + '" stroke="#ddd" stroke-width="0.005"/>'
+          '<line x1="' +
+            -pad +
+            '" y1="' +
+            v +
+            '" x2="' +
+            pad +
+            '" y2="' +
+            v +
+            '" stroke="#ddd" stroke-width="0.005"/>',
         );
         parts.push(
-          '<line x1="' + v + '" y1="' + (-pad) + '" x2="' + v + '" y2="' + pad + '" stroke="#ddd" stroke-width="0.005"/>'
+          '<line x1="' +
+            v +
+            '" y1="' +
+            -pad +
+            '" x2="' +
+            v +
+            '" y2="' +
+            pad +
+            '" stroke="#ddd" stroke-width="0.005"/>',
         );
       }
     }
@@ -561,17 +645,25 @@ const ThreeJSPlot = (function () {
     var parts = [];
     if (k > 0) {
       parts.push(
-        '<line x1="-1" y1="0" x2="1" y2="0" stroke="#999" stroke-width="0.008"/>'
+        '<line x1="-1" y1="0" x2="1" y2="0" stroke="#999" stroke-width="0.008"/>',
       );
       parts.push(
-        '<line x1="0" y1="-1" x2="0" y2="1" stroke="#999" stroke-width="0.008"/>'
+        '<line x1="0" y1="-1" x2="0" y2="1" stroke="#999" stroke-width="0.008"/>',
       );
     } else {
       parts.push(
-        '<line x1="' + (-pad) + '" y1="0" x2="' + pad + '" y2="0" stroke="#999" stroke-width="0.008"/>'
+        '<line x1="' +
+          -pad +
+          '" y1="0" x2="' +
+          pad +
+          '" y2="0" stroke="#999" stroke-width="0.008"/>',
       );
       parts.push(
-        '<line x1="0" y1="' + (-pad) + '" x2="0" y2="' + pad + '" stroke="#999" stroke-width="0.008"/>'
+        '<line x1="0" y1="' +
+          -pad +
+          '" x2="0" y2="' +
+          pad +
+          '" stroke="#999" stroke-width="0.008"/>',
       );
     }
     return parts;
@@ -584,28 +676,43 @@ const ThreeJSPlot = (function () {
     var parts = [];
     if (k > 0) {
       var circles = sphericalGridCircles(projection);
-      var labelAngleStart = 10 * Math.PI / 180;
-      var labelAngleStep = circles.length > 1
-        ? (35 * Math.PI / 180) / (circles.length - 1)
-        : 0;
+      var labelAngleStart = (10 * Math.PI) / 180;
+      var labelAngleStep =
+        circles.length > 1 ? (35 * Math.PI) / 180 / (circles.length - 1) : 0;
       for (var ci = 0; ci < circles.length; ci++) {
         var phi = labelAngleStart + ci * labelAngleStep;
         var lx = (circles[ci].r * Math.cos(phi) + 0.02).toFixed(5);
         var ly = (-circles[ci].r * Math.sin(phi) - 0.01).toFixed(5); // SVG y-flip
         parts.push(
-          '<text x="' + lx + '" y="' + ly + '" text-anchor="start" font-size="0.06" fill="#999" font-family="Arial,sans-serif">' + circles[ci].label + '</text>'
+          '<text x="' +
+            lx +
+            '" y="' +
+            ly +
+            '" text-anchor="start" font-size="0.06" fill="#999" font-family="Arial,sans-serif">' +
+            circles[ci].label +
+            "</text>",
         );
       }
     } else {
       var isHyperbolic = k < 0;
-      var labelTicks = isHyperbolic ? [-0.75, -0.5, -0.25, 0.25, 0.5, 0.75] : [-1, -0.5, 0.5, 1];
+      var labelTicks = isHyperbolic
+        ? [-0.75, -0.5, -0.25, 0.25, 0.5, 0.75]
+        : [-1, -0.5, 0.5, 1];
       for (var ti = 0; ti < labelTicks.length; ti++) {
         var v = labelTicks[ti];
         parts.push(
-          '<text x="' + v + '" y="0.07" text-anchor="middle" font-size="0.06" fill="#999" font-family="Arial,sans-serif">' + v + '</text>'
+          '<text x="' +
+            v +
+            '" y="0.07" text-anchor="middle" font-size="0.06" fill="#999" font-family="Arial,sans-serif">' +
+            v +
+            "</text>",
         );
         parts.push(
-          '<text x="0.04" y="' + (-v + 0.02) + '" text-anchor="start" font-size="0.06" fill="#999" font-family="Arial,sans-serif">' + v + '</text>'
+          '<text x="0.04" y="' +
+            (-v + 0.02) +
+            '" text-anchor="start" font-size="0.06" fill="#999" font-family="Arial,sans-serif">' +
+            v +
+            "</text>",
         );
       }
     }
@@ -615,7 +722,7 @@ const ThreeJSPlot = (function () {
   function downloadSVG(dataset, curvature) {
     if (!lastPositions || lastPositions.length === 0) return;
 
-    var k = (curvature !== undefined && curvature !== null) ? curvature : 0;
+    var k = curvature !== undefined && curvature !== null ? curvature : 0;
     const n = lastPositions.length / 2;
     const pad = 1.15;
     const parts = [];
@@ -623,13 +730,29 @@ const ThreeJSPlot = (function () {
     parts.push('<?xml version="1.0" encoding="UTF-8"?>');
     parts.push(
       '<svg xmlns="http://www.w3.org/2000/svg"' +
-        ' viewBox="' + (-pad) + " " + (-pad) + " " + (pad * 2) + " " + (pad * 2) + '"' +
+        ' viewBox="' +
+        -pad +
+        " " +
+        -pad +
+        " " +
+        pad * 2 +
+        " " +
+        pad * 2 +
+        '"' +
         ' width="500" height="500">',
     );
 
     // White background
     parts.push(
-      '<rect x="' + (-pad) + '" y="' + (-pad) + '" width="' + (pad * 2) + '" height="' + (pad * 2) + '" fill="white"/>',
+      '<rect x="' +
+        -pad +
+        '" y="' +
+        -pad +
+        '" width="' +
+        pad * 2 +
+        '" height="' +
+        pad * 2 +
+        '" fill="white"/>',
     );
 
     // Grid lines
@@ -660,8 +783,18 @@ const ThreeJSPlot = (function () {
       const g = Math.round(lastColors[i * 3 + 1] * 255);
       const b = Math.round(lastColors[i * 3 + 2] * 255);
       parts.push(
-        '<circle cx="' + x + '" cy="' + y + '" r="0.016"' +
-          ' fill="rgb(' + r + "," + g + "," + b + ')" opacity="0.85"/>',
+        '<circle cx="' +
+          x +
+          '" cy="' +
+          y +
+          '" r="0.016"' +
+          ' fill="rgb(' +
+          r +
+          "," +
+          g +
+          "," +
+          b +
+          ')" opacity="0.85"/>',
       );
     }
 
@@ -681,5 +814,12 @@ const ThreeJSPlot = (function () {
     URL.revokeObjectURL(url);
   }
 
-  return { initPlot, updatePlot, setBoundary, hideBoundary, setCurvature, downloadSVG };
+  return {
+    initPlot,
+    updatePlot,
+    setBoundary,
+    hideBoundary,
+    setCurvature,
+    downloadSVG,
+  };
 })();
