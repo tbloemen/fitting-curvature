@@ -363,11 +363,11 @@
       area_utilisation: "Area Utilisation",
       radial_distribution: "Radial Distribution",
     },
-    // "Perceptual Evaluation": {
-    //   cluster_interpretability: "Silhouette Score",
-    //   davies_bouldin: "Davies-Bouldin Index",
-    //   dunn_index: "Dunn Index",
-    // },
+    "Perceptual Evaluation": {
+      class_density_measure: "Class Density Measure",
+      cluster_density_measure: "Cluster Density Measure",
+      db_index_ratio: "DB Index Ratio",
+    },
   };
 
   function formatMetricValue(key, value) {
