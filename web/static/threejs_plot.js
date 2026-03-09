@@ -18,7 +18,29 @@ const ThreeJSPlot = (function () {
   const frustumSize = 2.4;
   const gridExtent = 1.15;
   const euclideanTicks = [-1, -0.5, 0, 0.5, 1];
-  const hyperbolicTicks = [-0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75];
+  /**
+   * Compute hyperbolic tick positions and labels for curvature k.
+   * Ticks are placed at geodesic distances n*r from the origin,
+   * where r = 1/sqrt(|k|). In the Poincaré disk, position = tanh(n/2).
+   * Returns array of {pos, label} for both positive and negative sides.
+   */
+  function hyperbolicTicksForCurvature(k) {
+    var r = 1 / Math.sqrt(Math.abs(k));
+    var ticks = [];
+    for (var n = 1; n <= 4; n++) {
+      var pos = Math.tanh(n / 2);
+      if (pos > 0.98) break; // too close to boundary
+      var dist = n * r;
+      var label = Number.isInteger(dist) ? dist.toString() : dist.toFixed(1);
+      ticks.push({ pos: pos, label: label });
+      ticks.push({ pos: -pos, label: "-" + label });
+    }
+    // Add origin
+    ticks.push({ pos: 0, label: "0" });
+    // Sort by position
+    ticks.sort(function (a, b) { return a.pos - b.pos; });
+    return ticks;
+  }
   const ARC_SEGMENTS = 64;
 
   // Spherical grid settings
@@ -197,9 +219,9 @@ const ThreeJSPlot = (function () {
         gridVerts.push(0, 0, -0.2, dx, dy, -0.2);
       }
     } else if (isHyperbolic) {
-      var ticks = hyperbolicTicks;
+      var ticks = hyperbolicTicksForCurvature(k);
       for (var ti = 0; ti < ticks.length; ti++) {
-        var v = ticks[ti];
+        var v = ticks[ti].pos;
         if (Math.abs(v) < 1e-10) continue;
         // Horizontal geodesic at y = v
         var hPts = poincareGeodesicArc(v, false, ARC_SEGMENTS);
@@ -298,35 +320,62 @@ const ThreeJSPlot = (function () {
         tickLabelDivs.push(label);
       }
     } else {
-      var labelTicks = isHyperbolic
-        ? [-0.75, -0.5, -0.25, 0.25, 0.5, 0.75]
-        : [-1, -0.5, 0.5, 1];
-      for (var ti = 0; ti < labelTicks.length; ti++) {
-        var v = labelTicks[ti];
-        // For Euclidean, show real-world values (normalized position * data scale)
-        var displayVal = (!isHyperbolic && dataScale) ? (v * dataScale) : v;
-        var displayStr = Number.isInteger(displayVal) ? displayVal.toString() : displayVal.toFixed(2);
-        var xLabel = document.createElement("div");
-        xLabel.style.cssText =
-          "position:absolute;font-size:10px;color:#999;pointer-events:none;font-family:Arial,sans-serif;";
-        xLabel.textContent = displayStr;
-        xLabel._worldX = v;
-        xLabel._worldY = 0;
-        xLabel._offsetX = -5;
-        xLabel._offsetY = 10;
-        container.appendChild(xLabel);
-        tickLabelDivs.push(xLabel);
+      if (isHyperbolic) {
+        var hTicks = hyperbolicTicksForCurvature(k);
+        for (var ti = 0; ti < hTicks.length; ti++) {
+          var v = hTicks[ti].pos;
+          if (Math.abs(v) < 1e-10) continue; // skip origin
+          var displayStr = hTicks[ti].label;
+          var xLabel = document.createElement("div");
+          xLabel.style.cssText =
+            "position:absolute;font-size:10px;color:#999;pointer-events:none;font-family:Arial,sans-serif;";
+          xLabel.textContent = displayStr;
+          xLabel._worldX = v;
+          xLabel._worldY = 0;
+          xLabel._offsetX = -5;
+          xLabel._offsetY = 10;
+          container.appendChild(xLabel);
+          tickLabelDivs.push(xLabel);
 
-        var yLabel = document.createElement("div");
-        yLabel.style.cssText =
-          "position:absolute;font-size:10px;color:#999;pointer-events:none;font-family:Arial,sans-serif;";
-        yLabel.textContent = displayStr;
-        yLabel._worldX = 0;
-        yLabel._worldY = v;
-        yLabel._offsetX = 5;
-        yLabel._offsetY = -5;
-        container.appendChild(yLabel);
-        tickLabelDivs.push(yLabel);
+          var yLabel = document.createElement("div");
+          yLabel.style.cssText =
+            "position:absolute;font-size:10px;color:#999;pointer-events:none;font-family:Arial,sans-serif;";
+          yLabel.textContent = displayStr;
+          yLabel._worldX = 0;
+          yLabel._worldY = v;
+          yLabel._offsetX = 5;
+          yLabel._offsetY = -5;
+          container.appendChild(yLabel);
+          tickLabelDivs.push(yLabel);
+        }
+      } else {
+        var labelTicks = [-1, -0.5, 0.5, 1];
+        for (var ti = 0; ti < labelTicks.length; ti++) {
+          var v = labelTicks[ti];
+          var displayVal = dataScale ? (v * dataScale) : v;
+          var displayStr = Number.isInteger(displayVal) ? displayVal.toString() : displayVal.toFixed(2);
+          var xLabel = document.createElement("div");
+          xLabel.style.cssText =
+            "position:absolute;font-size:10px;color:#999;pointer-events:none;font-family:Arial,sans-serif;";
+          xLabel.textContent = displayStr;
+          xLabel._worldX = v;
+          xLabel._worldY = 0;
+          xLabel._offsetX = -5;
+          xLabel._offsetY = 10;
+          container.appendChild(xLabel);
+          tickLabelDivs.push(xLabel);
+
+          var yLabel = document.createElement("div");
+          yLabel.style.cssText =
+            "position:absolute;font-size:10px;color:#999;pointer-events:none;font-family:Arial,sans-serif;";
+          yLabel.textContent = displayStr;
+          yLabel._worldX = 0;
+          yLabel._worldY = v;
+          yLabel._offsetX = 5;
+          yLabel._offsetY = -5;
+          container.appendChild(yLabel);
+          tickLabelDivs.push(yLabel);
+        }
       }
     }
     updateTickPositions();
@@ -587,9 +636,9 @@ const ThreeJSPlot = (function () {
         );
       }
     } else if (isHyperbolic) {
-      var ticks = hyperbolicTicks;
+      var ticks = hyperbolicTicksForCurvature(k);
       for (var ti = 0; ti < ticks.length; ti++) {
-        var v = ticks[ti];
+        var v = ticks[ti].pos;
         if (Math.abs(v) < 1e-10) continue;
         // Horizontal geodesic (SVG y is flipped → negate y)
         var hPts = poincareGeodesicArc(v, false, ARC_SEGMENTS);
@@ -706,28 +755,48 @@ const ThreeJSPlot = (function () {
       }
     } else {
       var isHyperbolic = k < 0;
-      var labelTicks = isHyperbolic
-        ? [-0.75, -0.5, -0.25, 0.25, 0.5, 0.75]
-        : [-1, -0.5, 0.5, 1];
-      for (var ti = 0; ti < labelTicks.length; ti++) {
-        var v = labelTicks[ti];
-        var isEuclidean = k === 0;
-        var displayVal = (isEuclidean && dataScale) ? (v * dataScale) : v;
-        var displayStr = Number.isInteger(displayVal) ? displayVal.toString() : displayVal.toFixed(2);
-        parts.push(
-          '<text x="' +
-            v +
-            '" y="0.07" text-anchor="middle" font-size="0.06" fill="#999" font-family="Arial,sans-serif">' +
-            displayStr +
-            "</text>",
-        );
-        parts.push(
-          '<text x="0.04" y="' +
-            (-v + 0.02) +
-            '" text-anchor="start" font-size="0.06" fill="#999" font-family="Arial,sans-serif">' +
-            displayStr +
-            "</text>",
-        );
+      if (isHyperbolic) {
+        var hTicks = hyperbolicTicksForCurvature(k);
+        for (var ti = 0; ti < hTicks.length; ti++) {
+          var v = hTicks[ti].pos;
+          if (Math.abs(v) < 1e-10) continue;
+          var displayStr = hTicks[ti].label;
+          parts.push(
+            '<text x="' +
+              v +
+              '" y="0.07" text-anchor="middle" font-size="0.06" fill="#999" font-family="Arial,sans-serif">' +
+              displayStr +
+              "</text>",
+          );
+          parts.push(
+            '<text x="0.04" y="' +
+              (-v + 0.02) +
+              '" text-anchor="start" font-size="0.06" fill="#999" font-family="Arial,sans-serif">' +
+              displayStr +
+              "</text>",
+          );
+        }
+      } else {
+        var labelTicks = [-1, -0.5, 0.5, 1];
+        for (var ti = 0; ti < labelTicks.length; ti++) {
+          var v = labelTicks[ti];
+          var displayVal = dataScale ? (v * dataScale) : v;
+          var displayStr = Number.isInteger(displayVal) ? displayVal.toString() : displayVal.toFixed(2);
+          parts.push(
+            '<text x="' +
+              v +
+              '" y="0.07" text-anchor="middle" font-size="0.06" fill="#999" font-family="Arial,sans-serif">' +
+              displayStr +
+              "</text>",
+          );
+          parts.push(
+            '<text x="0.04" y="' +
+              (-v + 0.02) +
+              '" text-anchor="start" font-size="0.06" fill="#999" font-family="Arial,sans-serif">' +
+              displayStr +
+              "</text>",
+          );
+        }
       }
     }
     return parts;
