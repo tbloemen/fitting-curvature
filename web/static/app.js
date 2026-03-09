@@ -245,7 +245,12 @@
   function handleJsonMessage(msg) {
     if (msg.type === "update") {
       currentCurvature = msg.curvature;
-      ThreeJSPlot.setCurvature(msg.curvature, msg.projection, msg.boundary_r, msg.data_scale);
+      ThreeJSPlot.setCurvature(
+        msg.curvature,
+        msg.projection,
+        msg.boundary_r,
+        msg.data_scale,
+      );
       var iter = msg.iteration + 1;
       iterationLabel.textContent = iter + " / " + msg.max_iterations;
       var pct = msg.max_iterations > 0 ? (iter / msg.max_iterations) * 100 : 0;
@@ -301,7 +306,12 @@
       displayMetrics(msg.metrics);
     } else if (msg.type === "boundary") {
       currentCurvature = msg.curvature;
-      ThreeJSPlot.setCurvature(msg.curvature, msg.projection, msg.boundary_r, msg.data_scale);
+      ThreeJSPlot.setCurvature(
+        msg.curvature,
+        msg.projection,
+        msg.boundary_r,
+        msg.data_scale,
+      );
       if (msg.points) {
         ThreeJSPlot.setBoundary(new Float32Array(msg.points));
       } else {
@@ -359,10 +369,10 @@
     //   geodesic_distortion_gu: "Geodesic Distortion (Gu et al.)",
     //   geodesic_distortion_mse: "Geodesic Distortion (MSE)",
     // },
-    "Space Efficiency": {
-      area_utilisation: "Area Utilisation",
-      radial_distribution: "Radial Distribution",
-    },
+    // "Space Efficiency": {
+    //   area_utilisation: "Area Utilisation",
+    //   radial_distribution: "Radial Distribution",
+    // },
     "Perceptual Evaluation": {
       class_density_measure: "Class Density Measure",
       cluster_density_measure: "Cluster Density Measure",
