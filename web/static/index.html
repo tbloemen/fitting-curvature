@@ -130,6 +130,17 @@
               step="1"
             />
           </div>
+          <div class="form-group">
+            <label for="cfg-scaling-loss-type"
+              >Scaling loss (hyperbolic k &lt; 0)</label
+            >
+            <select id="cfg-scaling-loss-type">
+              <option value="hard_barrier">Hard Barrier</option>
+              <option value="softplus_barrier">Softplus Barrier</option>
+              <option value="mean_distance">Mean Distance</option>
+              <option value="rms">RMS (original)</option>
+            </select>
+          </div>
         </details>
 
         <details>

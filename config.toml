@@ -12,6 +12,7 @@ early_exaggeration_factor = 4
 momentum_early = 0.5
 momentum_main = 0.8
 centering_weight = 0.5
+scaling_loss_type = "hard_barrier"
 
 [hyperparameters]
 init_scale = "auto"

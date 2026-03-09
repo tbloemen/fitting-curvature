@@ -23,6 +23,7 @@ DEFAULT_CONFIG = {
         "momentum_early": 0.5,
         "momentum_main": 0.8,
         "centering_weight": 0.0,
+        "scaling_loss_type": "hard_barrier",
     },
     "hyperparameters": {
         "learning_rates": {"k": 200.0},
@@ -151,6 +152,19 @@ def validate_config(config: Dict[str, Any]) -> tuple[bool, str]:
         centering_weight = config["embedding"].get("centering_weight", 0.0)
         if not isinstance(centering_weight, (int, float)) or centering_weight < 0:
             return False, "centering_weight must be a non-negative number"
+
+        valid_scaling_loss_types = [
+            "rms",
+            "hard_barrier",
+            "softplus_barrier",
+            "mean_distance",
+        ]
+        scaling_loss_type = config["embedding"].get("scaling_loss_type", "hard_barrier")
+        if scaling_loss_type not in valid_scaling_loss_types:
+            return (
+                False,
+                f"scaling_loss_type must be one of {valid_scaling_loss_types}",
+            )
 
         # Validate hyperparameters section
         if "hyperparameters" not in config:

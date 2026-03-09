@@ -15,7 +15,7 @@ from abc import ABC, abstractmethod
 import torch
 from torch import Tensor
 
-from src.types import InitMethod
+from src.types import InitMethod, ScalingLossType
 
 
 def _pca_init(
@@ -537,7 +537,11 @@ class Sphere(Manifold):
 class Hyperboloid(Manifold):
     """Hyperbolic manifold (k<0), hyperboloid model in R^(d+1)."""
 
-    def __init__(self, curvature: float):
+    def __init__(
+        self,
+        curvature: float,
+        scaling_loss_type: ScalingLossType = ScalingLossType.HARD_BARRIER,
+    ):
         """
         Initialize hyperbolic manifold.
 
@@ -545,6 +549,8 @@ class Hyperboloid(Manifold):
         ----------
         curvature : float
             Curvature k < 0. Points lie on hyperboloid in R^(d+1)
+        scaling_loss_type : ScalingLossType
+            Strategy for the scaling regularization loss.
 
         Notes
         -----
@@ -554,6 +560,7 @@ class Hyperboloid(Manifold):
         if curvature >= 0:
             raise ValueError("Hyperbolic manifold requires curvature < 0")
         super().__init__(curvature)
+        self.scaling_loss_type = scaling_loss_type
 
     def center_and_scale(self, points: Tensor) -> Tensor:
         """Center points using Fréchet mean (Lorentz boost) and scale so RMS geodesic distance = 1."""
@@ -650,14 +657,26 @@ class Hyperboloid(Manifold):
         return points
 
     def scaling_loss(self, points: Tensor) -> Tensor:
-        """One-sided barrier: only penalize points beyond d_max = 2r from origin."""
+        """Scaling regularization loss, strategy depends on scaling_loss_type."""
         r = self.radius
-        d_max = 2.0 * r
         x0 = points[:, 0]
         alpha = torch.acosh(torch.clamp(x0 / r, min=1.0 + 1e-7))
         geodesic_dist = r * alpha
-        excess = torch.relu(geodesic_dist - d_max)
-        return torch.mean(excess)
+
+        if self.scaling_loss_type == ScalingLossType.RMS:
+            rms = torch.sqrt(torch.mean(geodesic_dist**2))
+            return (rms - 1.0) ** 2
+        elif self.scaling_loss_type == ScalingLossType.HARD_BARRIER:
+            d_max = 3.0 * r
+            excess = torch.relu(geodesic_dist - d_max)
+            return torch.mean(excess**2)
+        elif self.scaling_loss_type == ScalingLossType.SOFTPLUS_BARRIER:
+            d_max = 3.0 * r
+            return torch.mean(torch.nn.functional.softplus(geodesic_dist - d_max))
+        elif self.scaling_loss_type == ScalingLossType.MEAN_DISTANCE:
+            return torch.mean(geodesic_dist)
+        else:
+            return torch.tensor(0.0, device=points.device, dtype=points.dtype)
 
     def init_points(
         self,

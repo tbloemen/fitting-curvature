@@ -9,7 +9,7 @@ from src.affinities import compute_perplexity_affinities
 from src.kernels import compute_q_matrix
 from src.manifolds import Euclidean, Hyperboloid, Manifold, Sphere
 from src.riemannian_optimizer import RiemannianSGDMomentum
-from src.types import InitMethod
+from src.types import InitMethod, ScalingLossType
 
 
 def compute_tsne_kl_loss(Q: Tensor, V: Tensor, eps: float = 1e-12) -> Tensor:
@@ -65,6 +65,7 @@ class ConstantCurvatureEmbedding(nn.Module):
         device: torch.device,
         init_method: InitMethod = InitMethod.RANDOM,
         data: Tensor | None = None,
+        scaling_loss_type: ScalingLossType = ScalingLossType.HARD_BARRIER,
     ):
         super().__init__()
         self.n_points = n_points
@@ -73,7 +74,7 @@ class ConstantCurvatureEmbedding(nn.Module):
         self.device = device
 
         # Create appropriate manifold
-        self.manifold = self._create_manifold(curvature)
+        self.manifold = self._create_manifold(curvature, scaling_loss_type)
 
         # Initialize points on manifold
         points_init = self.manifold.init_points(
@@ -84,14 +85,16 @@ class ConstantCurvatureEmbedding(nn.Module):
         # Set ambient_dim for backward compatibility
         self.ambient_dim = self.manifold.ambient_dim_for_embed_dim(embed_dim)
 
-    def _create_manifold(self, curvature: float) -> Manifold:
+    def _create_manifold(
+        self, curvature: float, scaling_loss_type: ScalingLossType
+    ) -> Manifold:
         """Factory method to create appropriate manifold."""
         if curvature > 0:
             return Sphere(curvature)
         elif curvature == 0:
             return Euclidean(curvature)
         else:
-            return Hyperboloid(curvature)
+            return Hyperboloid(curvature, scaling_loss_type=scaling_loss_type)
 
     def pairwise_distances(self, points: Tensor) -> Tensor:
         """
@@ -127,6 +130,7 @@ def fit_embedding(
     init_method: InitMethod = InitMethod.PCA,
     init_scale: float = 0.0001,
     centering_weight: float = 0.0,
+    scaling_loss_type: ScalingLossType = ScalingLossType.HARD_BARRIER,
     verbose: bool = True,
     callback: Optional[
         Callable[[int, float, "ConstantCurvatureEmbedding", str], bool]
@@ -233,6 +237,7 @@ def fit_embedding(
         device=device,
         init_method=init_method,
         data=data,
+        scaling_loss_type=scaling_loss_type,
     )
 
     # Step 3: Create optimizer with momentum
