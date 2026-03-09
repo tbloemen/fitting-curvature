@@ -64,6 +64,7 @@ def main():
     early_exaggeration_factor = embedding_config.get("early_exaggeration_factor", 12.0)
     momentum_early = embedding_config.get("momentum_early", 0.5)
     momentum_main = embedding_config.get("momentum_main", 0.8)
+    centering_weight = embedding_config.get("centering_weight", 0.0)
 
     # Normalize data so mean pairwise distance = 1
     print("\nNormalizing data...")
@@ -122,6 +123,7 @@ def main():
             momentum_main=momentum_main,
             init_method=init_method,
             init_scale=init_scale,
+            centering_weight=centering_weight,
             verbose=True,
             precomputed_distances=D,
         )

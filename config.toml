@@ -1,28 +1,29 @@
 [data]
-dataset = "mnist"
-n_samples = 50
+dataset = "uniform_hyperbolic"
+n_samples = 1000
 
 [embedding]
 embed_dim = 2
-n_iterations = 300
+n_iterations = 1000
 init_method = "pca"
-perplexity = 30
+perplexity = 50
 early_exaggeration_iterations = 250
-early_exaggeration_factor = 12
+early_exaggeration_factor = 4
 momentum_early = 0.5
 momentum_main = 0.8
+centering_weight = 0.5
 
 [hyperparameters]
 init_scale = "auto"
 
 [experiments]
-curvatures = [ 1,]
+curvatures = [ -1,]
 
 [evaluation]
 n_neighbors = 5
 
 [visualization]
-spherical_projection = "stereographic"
+spherical_projection = "azimuthal_equidistant"
 
 [hyperparameters.learning_rates]
 k = 200

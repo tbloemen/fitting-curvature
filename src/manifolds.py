@@ -216,6 +216,24 @@ class Manifold(ABC):
         pass
 
     @abstractmethod
+    def center(self, points: Tensor) -> Tensor:
+        """
+        Center points so the Fréchet mean lies at the manifold origin,
+        without rescaling.
+        """
+        pass
+
+    @abstractmethod
+    def scaling_loss(self, points: Tensor) -> Tensor:
+        """
+        Differentiable loss penalizing RMS geodesic distance from origin
+        deviating from 1.
+
+        Returns a scalar loss: (RMS_geodesic_dist - 1)^2
+        """
+        pass
+
+    @abstractmethod
     def ambient_dim_for_embed_dim(self, embed_dim: int) -> int:
         """
         Return ambient dimension for given embedding dimension.
@@ -253,6 +271,16 @@ class Euclidean(Manifold):
         if rms > 1e-10:
             points = points / rms
         return points
+
+    def center(self, points: Tensor) -> Tensor:
+        """Center points at origin."""
+        mean = points.mean(dim=0, keepdim=True)
+        return points - mean
+
+    def scaling_loss(self, points: Tensor) -> Tensor:
+        """Scaling loss for Euclidean space: (RMS_dist - 1)^2."""
+        rms = torch.sqrt((points**2).sum(dim=1).mean())
+        return (rms - 1.0) ** 2
 
     def init_points(
         self,
@@ -372,6 +400,14 @@ class Sphere(Manifold):
         new_spatial = r * torch.sin(new_theta).unsqueeze(1) * spatial_dir
 
         return torch.cat([new_x0.unsqueeze(1), new_spatial], dim=1)
+
+    def center(self, points: Tensor) -> Tensor:
+        """No-op: centering on the sphere is a rotation (isometry), doesn't affect KL loss."""
+        return points
+
+    def scaling_loss(self, points: Tensor) -> Tensor:
+        """No-op: scaling is constrained by the compact geometry of the sphere."""
+        return torch.tensor(0.0, device=points.device, dtype=points.dtype)
 
     def init_points(
         self,
@@ -578,6 +614,50 @@ class Hyperboloid(Manifold):
         new_spatial = r * torch.sinh(new_alpha).unsqueeze(1) * spatial_dir
 
         return torch.cat([new_x0.unsqueeze(1), new_spatial], dim=1)
+
+    def center(self, points: Tensor) -> Tensor:
+        """Center points so Fréchet mean is at origin (r, 0, ..., 0)."""
+        r = self.radius
+        r_sq = self.radius_squared
+
+        mean = points.mean(dim=0)
+        lorentz_sq = -(mean[0] ** 2) + (mean[1:] ** 2).sum()
+        if lorentz_sq >= 0:
+            raise ValueError(
+                f"The lorentz square was positive, while it should have been equal to -{r_sq}"
+            )
+        scale = r / torch.sqrt(-lorentz_sq)
+        frechet_mean = mean * scale
+
+        mu_spatial = frechet_mean[1:]
+        mu_spatial_norm = torch.norm(mu_spatial)
+
+        if mu_spatial_norm > 1e-10:
+            n_dir = mu_spatial / mu_spatial_norm
+            cosh_alpha = frechet_mean[0] / r
+            sinh_alpha = mu_spatial_norm / r
+
+            x0 = points[:, 0]
+            x_par = points[:, 1:] @ n_dir
+            x_perp = points[:, 1:] - x_par.unsqueeze(1) * n_dir.unsqueeze(0)
+
+            new_x0 = cosh_alpha * x0 - sinh_alpha * x_par
+            new_x_par = -sinh_alpha * x0 + cosh_alpha * x_par
+            new_spatial = x_perp + new_x_par.unsqueeze(1) * n_dir.unsqueeze(0)
+
+            points = torch.cat([new_x0.unsqueeze(1), new_spatial], dim=1)
+
+        return points
+
+    def scaling_loss(self, points: Tensor) -> Tensor:
+        """One-sided barrier: only penalize points beyond d_max = 2r from origin."""
+        r = self.radius
+        d_max = 2.0 * r
+        x0 = points[:, 0]
+        alpha = torch.acosh(torch.clamp(x0 / r, min=1.0 + 1e-7))
+        geodesic_dist = r * alpha
+        excess = torch.relu(geodesic_dist - d_max)
+        return torch.mean(excess)
 
     def init_points(
         self,

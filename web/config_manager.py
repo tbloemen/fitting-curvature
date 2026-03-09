@@ -22,6 +22,7 @@ DEFAULT_CONFIG = {
         "early_exaggeration_factor": 12.0,
         "momentum_early": 0.5,
         "momentum_main": 0.8,
+        "centering_weight": 0.0,
     },
     "hyperparameters": {
         "learning_rates": {"k": 200.0},
@@ -146,6 +147,10 @@ def validate_config(config: Dict[str, Any]) -> tuple[bool, str]:
         momentum_main = config["embedding"].get("momentum_main")
         if not isinstance(momentum_main, (int, float)) or not (0 <= momentum_main <= 1):
             return False, "momentum_main must be between 0 and 1"
+
+        centering_weight = config["embedding"].get("centering_weight", 0.0)
+        if not isinstance(centering_weight, (int, float)) or centering_weight < 0:
+            return False, "centering_weight must be a non-negative number"
 
         # Validate hyperparameters section
         if "hyperparameters" not in config:

@@ -126,6 +126,7 @@ def fit_embedding(
     momentum_main: float = 0.8,
     init_method: InitMethod = InitMethod.PCA,
     init_scale: float = 0.0001,
+    centering_weight: float = 0.0,
     verbose: bool = True,
     callback: Optional[
         Callable[[int, float, "ConstantCurvatureEmbedding", str], bool]
@@ -173,6 +174,10 @@ def fit_embedding(
         Initialization method. Default: PCA (recommended for t-SNE).
     init_scale : float
         Initialization scale for random init. Default: 0.0001.
+    centering_weight : float
+        Weight for the soft scaling regularization loss. When > 0, adds a
+        differentiable penalty (RMS_geodesic_dist - 1)^2 and uses hard
+        centering only. When 0 (default), uses hard center_and_scale.
     verbose : bool
         Print progress information. Default: True.
     callback : Optional[Callable[[int, float, ConstantCurvatureEmbedding, str], bool]]
@@ -275,12 +280,15 @@ def fit_embedding(
         # Compute KL divergence loss
         loss = compute_tsne_kl_loss(Q, V_current)
 
+        # Add soft scaling regularization
+        loss = loss + centering_weight * model.manifold.scaling_loss(model.points)
+
         loss.backward()
         optimizer.step()
 
-        # Center and scale points after each step
+        # Hard center points after each step
         with torch.no_grad():
-            model.points.data = model.manifold.center_and_scale(model.points.data)
+            model.points.data = model.manifold.center(model.points.data)
 
         if verbose:
             pbar.set_postfix({"loss": f"{loss.item():.4f}"})
