@@ -293,6 +293,8 @@ class TrainingManager:
             self.state.metrics = compute_all_metrics(
                 embedded_distances=embedded_distances,
                 embeddings=embeddings,
+                curvature=curvature,
+                projection=self.state.projection,
                 high_dim_data=self.state.high_dim_data,
                 high_dim_distances=self.state.high_dim_distances,
                 labels=self.state.labels,

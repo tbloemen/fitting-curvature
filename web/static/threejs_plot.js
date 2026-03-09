@@ -31,6 +31,7 @@ const ThreeJSPlot = (function () {
   let lastBoundaryVisible = false;
   let lastTitle = "";
   var lastBoundaryR = 1.0;
+  var dataScale = null; // Euclidean: max distance before normalization
 
   /**
    * Compute projected radii for spherical parallels given the projection type.
@@ -302,10 +303,13 @@ const ThreeJSPlot = (function () {
         : [-1, -0.5, 0.5, 1];
       for (var ti = 0; ti < labelTicks.length; ti++) {
         var v = labelTicks[ti];
+        // For Euclidean, show real-world values (normalized position * data scale)
+        var displayVal = (!isHyperbolic && dataScale) ? (v * dataScale) : v;
+        var displayStr = Number.isInteger(displayVal) ? displayVal.toString() : displayVal.toFixed(2);
         var xLabel = document.createElement("div");
         xLabel.style.cssText =
           "position:absolute;font-size:10px;color:#999;pointer-events:none;font-family:Arial,sans-serif;";
-        xLabel.textContent = v.toString();
+        xLabel.textContent = displayStr;
         xLabel._worldX = v;
         xLabel._worldY = 0;
         xLabel._offsetX = -5;
@@ -316,7 +320,7 @@ const ThreeJSPlot = (function () {
         var yLabel = document.createElement("div");
         yLabel.style.cssText =
           "position:absolute;font-size:10px;color:#999;pointer-events:none;font-family:Arial,sans-serif;";
-        yLabel.textContent = v.toString();
+        yLabel.textContent = displayStr;
         yLabel._worldX = 0;
         yLabel._worldY = v;
         yLabel._offsetX = 5;
@@ -441,15 +445,18 @@ const ThreeJSPlot = (function () {
     }
   }
 
-  function setCurvature(k, projection, newBoundaryR) {
+  function setCurvature(k, projection, newBoundaryR, newDataScale) {
     projection = projection || null;
     if (typeof newBoundaryR === "number") boundaryR = newBoundaryR;
+    var newScale = typeof newDataScale === "number" ? newDataScale : null;
     if (
       k === lastCurvature &&
       projection === lastProjection &&
-      boundaryR === lastBoundaryR
+      boundaryR === lastBoundaryR &&
+      newScale === dataScale
     )
       return;
+    dataScale = newScale;
     lastCurvature = k;
     lastProjection = projection;
     lastBoundaryR = boundaryR;
@@ -704,18 +711,21 @@ const ThreeJSPlot = (function () {
         : [-1, -0.5, 0.5, 1];
       for (var ti = 0; ti < labelTicks.length; ti++) {
         var v = labelTicks[ti];
+        var isEuclidean = k === 0;
+        var displayVal = (isEuclidean && dataScale) ? (v * dataScale) : v;
+        var displayStr = Number.isInteger(displayVal) ? displayVal.toString() : displayVal.toFixed(2);
         parts.push(
           '<text x="' +
             v +
             '" y="0.07" text-anchor="middle" font-size="0.06" fill="#999" font-family="Arial,sans-serif">' +
-            v +
+            displayStr +
             "</text>",
         );
         parts.push(
           '<text x="0.04" y="' +
             (-v + 0.02) +
             '" text-anchor="start" font-size="0.06" fill="#999" font-family="Arial,sans-serif">' +
-            v +
+            displayStr +
             "</text>",
         );
       }

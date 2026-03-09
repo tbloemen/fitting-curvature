@@ -245,7 +245,7 @@
   function handleJsonMessage(msg) {
     if (msg.type === "update") {
       currentCurvature = msg.curvature;
-      ThreeJSPlot.setCurvature(msg.curvature, msg.projection, msg.boundary_r);
+      ThreeJSPlot.setCurvature(msg.curvature, msg.projection, msg.boundary_r, msg.data_scale);
       var iter = msg.iteration + 1;
       iterationLabel.textContent = iter + " / " + msg.max_iterations;
       var pct = msg.max_iterations > 0 ? (iter / msg.max_iterations) * 100 : 0;
@@ -301,7 +301,7 @@
       displayMetrics(msg.metrics);
     } else if (msg.type === "boundary") {
       currentCurvature = msg.curvature;
-      ThreeJSPlot.setCurvature(msg.curvature, msg.projection, msg.boundary_r);
+      ThreeJSPlot.setCurvature(msg.curvature, msg.projection, msg.boundary_r, msg.data_scale);
       if (msg.points) {
         ThreeJSPlot.setBoundary(new Float32Array(msg.points));
       } else {
