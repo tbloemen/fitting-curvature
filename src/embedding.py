@@ -278,6 +278,10 @@ def fit_embedding(
         loss.backward()
         optimizer.step()
 
+        # Center and scale points after each step
+        with torch.no_grad():
+            model.points.data = model.manifold.center_and_scale(model.points.data)
+
         if verbose:
             pbar.set_postfix({"loss": f"{loss.item():.4f}"})
 
