@@ -25,13 +25,11 @@ const ThreeJSPlot = (function () {
    * Returns array of {pos, label} for both positive and negative sides.
    */
   function hyperbolicTicksForCurvature(k) {
-    var r = 1 / Math.sqrt(Math.abs(k));
     var ticks = [];
     for (var n = 1; n <= 4; n++) {
       var pos = Math.tanh(n / 2);
       if (pos > 0.98) break; // too close to boundary
-      var dist = n * r;
-      var label = Number.isInteger(dist) ? dist.toString() : dist.toFixed(1);
+      var label = n === 1 ? "r" : n + "r";
       ticks.push({ pos: pos, label: label });
       ticks.push({ pos: -pos, label: "-" + label });
     }
