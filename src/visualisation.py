@@ -64,8 +64,8 @@ def project_to_2d(
     j: int = 1,
     pole_axis: int | None = None,
     projection: str = "stereographic",
-    return_boundary_r: bool = False,
-) -> tuple[np.ndarray, np.ndarray] | tuple[np.ndarray, np.ndarray, float]:
+    return_scale_info: bool = False,
+) -> tuple[np.ndarray, np.ndarray] | tuple[np.ndarray, np.ndarray, dict]:
     """
     Project F-dimensional constant-curvature points onto 2D using two coordinates.
 
@@ -177,8 +177,8 @@ def project_to_2d(
                 f"Choose from: stereographic, azimuthal_equidistant, orthographic"
             )
 
-        if return_boundary_r:
-            return x_proj, y_proj, boundary_r
+        if return_scale_info:
+            return x_proj, y_proj, {"boundary_r": boundary_r}
         return x_proj, y_proj
 
     elif k == 0:
@@ -193,8 +193,12 @@ def project_to_2d(
             x_proj *= scale_factor
             y_proj *= scale_factor
 
-        if return_boundary_r:
-            return x_proj, y_proj, 1.0
+        if return_scale_info:
+            return (
+                x_proj,
+                y_proj,
+                {"data_scale": float(max_dist) if max_dist > 0 else 1.0},
+            )
         return x_proj, y_proj
 
     else:
@@ -209,8 +213,8 @@ def project_to_2d(
 
         x_proj = X[:, i + 1] / denom
         y_proj = X[:, j + 1] / denom
-        if return_boundary_r:
-            return x_proj, y_proj, 1.0
+        if return_scale_info:
+            return x_proj, y_proj, {}
         return x_proj, y_proj
 
 

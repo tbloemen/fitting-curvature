@@ -259,6 +259,9 @@ class TestComputeAllMetrics:
             "knn_overlap",
             "area_utilisation",
             "radial_distribution",
+            "class_density_measure",
+            "cluster_density_measure",
+            "db_index_ratio",
         }
         assert set(result.keys()) == expected_keys
 

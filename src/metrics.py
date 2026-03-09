@@ -4,8 +4,11 @@ from typing import Dict, Optional, Tuple
 import numpy as np
 from scipy.spatial import ConvexHull
 from scipy.spatial.distance import pdist, squareform
+from scipy.stats import gaussian_kde
 from sklearn.manifold import trustworthiness
 from sklearn.metrics import silhouette_score
+
+from src.visualisation import project_to_2d
 
 # Maximum number of samples before switching to sampling-based evaluation
 # For N samples, sklearn computes an N×N distance matrix
@@ -169,29 +172,20 @@ def volume_distortion(
 # ---------------------------------------------------------------------------
 
 
-def area_utilisation(embeddings: np.ndarray) -> float:
+def area_utilisation(pts: np.ndarray) -> float:
     """
     Fraction of bounding area used by the convex hull of the embedding.
 
-    Uses the 2D projection (first two spatial coordinates).
-
     Parameters
     ----------
-    embeddings : np.ndarray, shape (n, d)
-        Embedded points (ambient coordinates)
+    pts : np.ndarray, shape (n, 2)
+        2D projected coordinates
 
     Returns
     -------
     float
         Ratio of convex hull area to bounding box area (0 to 1)
     """
-    # Use first two spatial dimensions
-    if embeddings.shape[1] <= 2:
-        pts = embeddings[:, :2]
-    else:
-        # For curved spaces the first column is x0 (time/radial); skip it
-        pts = embeddings[:, 1:3]
-
     if pts.shape[0] < 3:
         return 0.0
 
@@ -210,7 +204,7 @@ def area_utilisation(embeddings: np.ndarray) -> float:
     return float(hull_area / bbox_area)
 
 
-def radial_distribution(embeddings: np.ndarray) -> float:
+def radial_distribution(pts: np.ndarray) -> float:
     """
     Normalized standard deviation of radial distances from centroid.
 
@@ -218,7 +212,8 @@ def radial_distribution(embeddings: np.ndarray) -> float:
 
     Parameters
     ----------
-    embeddings : np.ndarray, shape (n, d)
+    pts : np.ndarray, shape (n, 2)
+        2D projected coordinates
 
     Returns
     -------
@@ -226,8 +221,8 @@ def radial_distribution(embeddings: np.ndarray) -> float:
         Coefficient of variation of radial distances (std / mean).
         Lower = more uniform spread.
     """
-    centroid = embeddings.mean(axis=0)
-    radii = np.linalg.norm(embeddings - centroid, axis=1)
+    centroid = pts.mean(axis=0)
+    radii = np.linalg.norm(pts - centroid, axis=1)
     mean_r = radii.mean()
     if mean_r < 1e-12:
         return 0.0
@@ -333,6 +328,169 @@ def davies_bouldin(
                 max_ratio = ratio
         db += max_ratio
     return float(db / k)
+
+
+def class_density_measure(
+    pts: np.ndarray,
+    labels: np.ndarray,
+    grid_size: int = 100,
+) -> float:
+    """
+    Class Density Measure (CDM) from Tatu et al. (2009).
+
+    Estimates per-class density functions on a 2D grid, then sums the absolute
+    differences between all class pairs at every grid point:
+
+        CDM = sum_{k<l} sum_i |p_k^i - p_l^i|
+
+    where p_k^i is the density value of class k at grid point i. Higher values
+    indicate less overlap between classes (better separation).
+
+    Parameters
+    ----------
+    pts : np.ndarray, shape (n, 2)
+        2D projected coordinates
+    labels : np.ndarray, shape (n,)
+        Class labels
+    grid_size : int
+        Resolution of the density grid (grid_size x grid_size)
+
+    Returns
+    -------
+    float
+        CDM score (higher = less class overlap = better)
+    """
+    unique_labels = np.unique(labels)
+    M = len(unique_labels)
+    if M < 2:
+        return 0.0
+
+    # Build evaluation grid
+    margin = 0.05
+    x_range = pts[:, 0].max() - pts[:, 0].min()
+    y_range = pts[:, 1].max() - pts[:, 1].min()
+    x_min = pts[:, 0].min() - margin * x_range
+    x_max = pts[:, 0].max() + margin * x_range
+    y_min = pts[:, 1].min() - margin * y_range
+    y_max = pts[:, 1].max() + margin * y_range
+    xx, yy = np.meshgrid(
+        np.linspace(x_min, x_max, grid_size),
+        np.linspace(y_min, y_max, grid_size),
+    )
+    grid_points = np.vstack([xx.ravel(), yy.ravel()])
+
+    # Estimate density for each class and normalize to [0, 1]
+    density_images = []
+    for lbl in unique_labels:
+        class_pts = pts[labels == lbl]
+        if len(class_pts) < 2:
+            density_images.append(np.zeros(grid_points.shape[1]))
+            continue
+        try:
+            kde = gaussian_kde(class_pts.T)
+            density = kde(grid_points)
+        except np.linalg.LinAlgError:
+            density_images.append(np.zeros(grid_points.shape[1]))
+            continue
+        d_max = density.max()
+        if d_max > 0:
+            density /= d_max
+        density_images.append(density)
+
+    # CDM: sum of absolute differences between all class pairs
+    cdm = 0.0
+    for k in range(M - 1):
+        for l in range(k + 1, M):
+            cdm += np.sum(np.abs(density_images[k] - density_images[l]))
+
+    return float(cdm)
+
+
+def cluster_density_measure(
+    pts: np.ndarray,
+    labels: np.ndarray,
+) -> float:
+    """
+    Cluster Density Measure (ClDM) from Albuquerque et al. (2010).
+
+    Measures how well-separated and compact the clusters are:
+        ClDM = (1/K) * sum_{k=1}^{K} sum_{l=k+1}^{K} d_{k,l}^2 / (r_k * r_l)
+
+    where K is the number of clusters, d_{k,l} is the Euclidean distance
+    between cluster centers, and r_k is the average radius of cluster k.
+    Higher values indicate better-defined clusters.
+
+    Parameters
+    ----------
+    pts : np.ndarray, shape (n, 2)
+        2D projected coordinates
+    labels : np.ndarray, shape (n,)
+        Class/cluster labels
+
+    Returns
+    -------
+    float
+        ClDM score (higher = better separated clusters)
+    """
+    unique_labels = np.unique(labels)
+    K = len(unique_labels)
+    if K < 2:
+        return 0.0
+
+    centroids = np.zeros((K, 2))
+    radii = np.zeros(K)
+
+    for i, lbl in enumerate(unique_labels):
+        mask = labels == lbl
+        class_pts = pts[mask]
+        centroids[i] = class_pts.mean(axis=0)
+        # Average radius: mean distance from centroid
+        radii[i] = np.mean(np.linalg.norm(class_pts - centroids[i], axis=1))
+
+    # Avoid division by zero
+    radii = np.maximum(radii, 1e-12)
+
+    cldm = 0.0
+    for k in range(K):
+        for l in range(k + 1, K):
+            d_kl = np.linalg.norm(centroids[k] - centroids[l])
+            cldm += d_kl**2 / (radii[k] * radii[l])
+
+    return float(cldm / K)
+
+
+def db_index_ratio(
+    high_dim_distances: np.ndarray,
+    embedded_distances: np.ndarray,
+    labels: np.ndarray,
+) -> float:
+    """
+    Davies-Bouldin index ratio from Di Caro et al. (2010).
+
+    Ratio R = DB_d / DB_p between the DB index of the high-dimensional data
+    and the DB index of the projected data. A high R indicates that the
+    projection preserves or improves cluster separation relative to the
+    original space.
+
+    Parameters
+    ----------
+    high_dim_distances : np.ndarray, shape (n, n)
+        Pairwise distance matrix in high-dimensional space
+    embedded_distances : np.ndarray, shape (n, n)
+        Pairwise distance matrix in embedded space
+    labels : np.ndarray, shape (n,)
+        Class labels
+
+    Returns
+    -------
+    float
+        DB index ratio (higher = better visualization quality)
+    """
+    db_high = davies_bouldin(high_dim_distances, labels)
+    db_proj = davies_bouldin(embedded_distances, labels)
+    if db_proj < 1e-12:
+        return 0.0
+    return float(db_high / db_proj)
 
 
 def dunn_index(
@@ -449,6 +607,8 @@ def evaluate_embedding(
 def compute_all_metrics(
     embedded_distances: np.ndarray,
     embeddings: np.ndarray,
+    curvature: float = 0.0,
+    projection: str = "stereographic",
     high_dim_data: Optional[np.ndarray] = None,
     high_dim_distances: Optional[np.ndarray] = None,
     labels: Optional[np.ndarray] = None,
@@ -463,6 +623,12 @@ def compute_all_metrics(
         Pairwise geodesic distances in embedded space
     embeddings : np.ndarray, shape (n, d)
         Embedded points in ambient coordinates
+    curvature : float
+        Curvature of the embedding space (>0 spherical, 0 Euclidean, <0 hyperbolic).
+        Used to project embeddings to 2D for perceptual and space-efficiency metrics.
+    projection : str
+        Projection method for spherical embeddings (e.g. "stereographic",
+        "azimuthal_equidistant", "orthographic"). Ignored for k <= 0.
     high_dim_data : np.ndarray, optional, shape (n, D)
         Original high-dimensional data (needed for trustworthiness/continuity)
     high_dim_distances : np.ndarray, optional, shape (n, n)
@@ -479,12 +645,16 @@ def compute_all_metrics(
     """
     results: Dict[str, Optional[float]] = {}
 
+    # Project embeddings to 2D using the appropriate projection for the geometry
+    result_2d = project_to_2d(embeddings, k=curvature, projection=projection)
+    x, y = result_2d[0], result_2d[1]
+    projected_2d = np.column_stack([x, y])
+
     # Compute high-dim distances from data if not provided
     if high_dim_distances is None and high_dim_data is not None:
         high_dim_distances = squareform(pdist(high_dim_data))
 
     has_high_dist = high_dim_distances is not None
-    # has_labels = labels is not None and len(np.unique(labels)) >= 2
 
     # --- A. Local structure preservation ---
     if high_dim_data is not None:
@@ -518,20 +688,26 @@ def compute_all_metrics(
     #     results["geodesic_distortion_mse"] = None
 
     # --- C. Space efficiency ---
-    results["area_utilisation"] = area_utilisation(embeddings)
-    results["radial_distribution"] = radial_distribution(embeddings)
+    results["area_utilisation"] = area_utilisation(projected_2d)
+    results["radial_distribution"] = radial_distribution(projected_2d)
 
     # --- D. Perceptual evaluation ---
-    # if has_labels:
-    #     assert labels is not None
-    #     results["cluster_interpretability"] = cluster_interpretability(
-    #         embedded_distances, labels
-    #     )
-    #     results["davies_bouldin"] = davies_bouldin(embedded_distances, labels)
-    #     results["dunn_index"] = dunn_index(embedded_distances, labels)
-    # else:
-    #     results["cluster_interpretability"] = None
-    #     results["davies_bouldin"] = None
-    #     results["dunn_index"] = None
+    has_labels = labels is not None and len(np.unique(labels)) >= 2
+    if has_labels:
+        assert labels is not None
+        results["class_density_measure"] = class_density_measure(projected_2d, labels)
+        results["cluster_density_measure"] = cluster_density_measure(
+            projected_2d, labels
+        )
+        if has_high_dist:
+            results["db_index_ratio"] = db_index_ratio(
+                high_dim_distances, embedded_distances, labels
+            )
+        else:
+            results["db_index_ratio"] = None
+    else:
+        results["class_density_measure"] = None
+        results["cluster_density_measure"] = None
+        results["db_index_ratio"] = None
 
     return results
