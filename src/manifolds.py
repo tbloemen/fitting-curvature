@@ -208,14 +208,6 @@ class Manifold(ABC):
         pass
 
     @abstractmethod
-    def center_and_scale(self, points: Tensor) -> Tensor:
-        """
-        Center points so the mean lies at the manifold origin and scale
-        so the RMS of geodesic distances from the origin equals 1.
-        """
-        pass
-
-    @abstractmethod
     def center(self, points: Tensor) -> Tensor:
         """
         Center points so the Fréchet mean lies at the manifold origin,
@@ -259,18 +251,6 @@ class Euclidean(Manifold):
         if abs(curvature) > 1e-10:
             raise ValueError("Euclidean manifold requires curvature = 0")
         super().__init__(0.0)
-
-    def center_and_scale(self, points: Tensor) -> Tensor:
-        """Center points at origin and scale so RMS distance from origin = 1."""
-        # Center: subtract mean
-        mean = points.mean(dim=0, keepdim=True)
-        points = points - mean
-        # Scale: divide by RMS of distances from origin
-        norms_sq = (points**2).sum(dim=1)  # ||x_i||^2
-        rms = torch.sqrt(norms_sq.mean())
-        if rms > 1e-10:
-            points = points / rms
-        return points
 
     def center(self, points: Tensor) -> Tensor:
         """Center points at origin."""
@@ -360,46 +340,6 @@ class Sphere(Manifold):
         if curvature <= 0:
             raise ValueError("Spherical manifold requires curvature > 0")
         super().__init__(curvature)
-
-    def center_and_scale(self, points: Tensor) -> Tensor:
-        """Center points so Fréchet mean is at north pole, scale so RMS geodesic distance = 1."""
-        r = self.radius
-
-        # 1. Center via Householder reflection mapping mean direction to north pole
-        mean = points.mean(dim=0)
-        mean_norm = torch.norm(mean)
-        if mean_norm > 1e-10:
-            mean_dir = mean / mean_norm
-            north = torch.zeros_like(mean_dir)
-            north[0] = 1.0
-            v = mean_dir - north
-            v_norm_sq = (v * v).sum()
-            if v_norm_sq > 1e-10:
-                # Householder reflection: H(x) = x - 2*(v·x)/(v·v) * v
-                proj = points @ v  # (n,)
-                points = points - (2.0 * proj / v_norm_sq).unsqueeze(1) * v.unsqueeze(0)
-
-        # 2. Scale geodesic distances from north pole so RMS = 1
-        cos_theta = torch.clamp(points[:, 0] / r, -1 + 1e-7, 1 - 1e-7)
-        theta = torch.acos(cos_theta)  # angular distance from pole
-        geodesic_dist = r * theta
-        rms = torch.sqrt(torch.mean(geodesic_dist**2))
-        if rms < 1e-10:
-            return points
-
-        new_dist = geodesic_dist / rms
-        new_theta = new_dist / r
-
-        # Reconstruct points with scaled angular distances
-        spatial = points[:, 1:]
-        spatial_norms = torch.norm(spatial, dim=1, keepdim=True)
-        spatial_norms = torch.clamp(spatial_norms, min=1e-10)
-        spatial_dir = spatial / spatial_norms
-
-        new_x0 = r * torch.cos(new_theta)
-        new_spatial = r * torch.sin(new_theta).unsqueeze(1) * spatial_dir
-
-        return torch.cat([new_x0.unsqueeze(1), new_spatial], dim=1)
 
     def center(self, points: Tensor) -> Tensor:
         """No-op: centering on the sphere is a rotation (isometry), doesn't affect KL loss."""
@@ -561,66 +501,6 @@ class Hyperboloid(Manifold):
             raise ValueError("Hyperbolic manifold requires curvature < 0")
         super().__init__(curvature)
         self.scaling_loss_type = scaling_loss_type
-
-    def center_and_scale(self, points: Tensor) -> Tensor:
-        """Center points using Fréchet mean (Lorentz boost) and scale so RMS geodesic distance = 1."""
-        r = self.radius
-        r_sq = self.radius_squared
-
-        # 1. Compute Fréchet mean via extrinsic approach
-        # Average ambient coordinates and project to hyperboloid
-        mean = points.mean(dim=0)
-        lorentz_sq = -(mean[0] ** 2) + (mean[1:] ** 2).sum()
-        if lorentz_sq >= 0:
-            raise ValueError(
-                f"The lorentz square was positive, while it should have been equal to -{r_sq}"
-            )
-        # Project mean to hyperboloid (Lorentzian normalization)
-        scale = r / torch.sqrt(-lorentz_sq)
-        frechet_mean = mean * scale
-
-        # 2. Apply inverse Lorentz boost to move Fréchet mean to origin (r, 0, ..., 0)
-        mu_spatial = frechet_mean[1:]
-        mu_spatial_norm = torch.norm(mu_spatial)
-
-        if mu_spatial_norm > 1e-10:
-            n_dir = mu_spatial / mu_spatial_norm
-            cosh_alpha = frechet_mean[0] / r
-            sinh_alpha = mu_spatial_norm / r
-
-            x0 = points[:, 0]  # (n_pts,)
-            x_par = points[:, 1:] @ n_dir  # (n_pts,) projection along boost direction
-            x_perp = points[:, 1:] - x_par.unsqueeze(1) * n_dir.unsqueeze(0)
-
-            # Inverse boost
-            new_x0 = cosh_alpha * x0 - sinh_alpha * x_par
-            new_x_par = -sinh_alpha * x0 + cosh_alpha * x_par
-            new_spatial = x_perp + new_x_par.unsqueeze(1) * n_dir.unsqueeze(0)
-
-            points = torch.cat([new_x0.unsqueeze(1), new_spatial], dim=1)
-
-        # 3. Scale geodesic distances from origin so RMS = 1
-        # Distance from origin (r, 0, ...): d = r * arcosh(x0 / r)
-        x0 = points[:, 0]
-        alpha = torch.acosh(torch.clamp(x0 / r, min=1.0 + 1e-7))
-        geodesic_dist = r * alpha
-        rms = torch.sqrt(torch.mean(geodesic_dist**2))
-        if rms < 1e-10:
-            return points
-
-        new_dist = geodesic_dist / rms
-        new_alpha = new_dist / r
-
-        # Reconstruct points with scaled hyperbolic angles
-        spatial = points[:, 1:]
-        spatial_norms = torch.norm(spatial, dim=1, keepdim=True)
-        spatial_norms = torch.clamp(spatial_norms, min=1e-10)
-        spatial_dir = spatial / spatial_norms
-
-        new_x0 = r * torch.cosh(new_alpha)
-        new_spatial = r * torch.sinh(new_alpha).unsqueeze(1) * spatial_dir
-
-        return torch.cat([new_x0.unsqueeze(1), new_spatial], dim=1)
 
     def center(self, points: Tensor) -> Tensor:
         """Center points so Fréchet mean is at origin (r, 0, ..., 0)."""
