@@ -403,7 +403,7 @@ def class_density_measure(
         for kj in range(ki + 1, M):
             cdm += np.sum(np.abs(density_images[ki] - density_images[kj]))
 
-    return float(cdm)
+    return float(cdm / grid_size**2)
 
 
 def cluster_density_measure(
