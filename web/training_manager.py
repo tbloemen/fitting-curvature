@@ -14,7 +14,7 @@ from src.load_data import load_raw_data
 from src.manifolds import Euclidean, Hyperboloid, Sphere
 from src.matrices import get_default_init_scale, normalize_data
 from src.metrics import compute_all_metrics
-from src.types import InitMethod
+from src.types import InitMethod, ScalingLossType
 
 
 class TrainingStatus(str, Enum):
@@ -197,6 +197,10 @@ class TrainingManager:
             early_exag_factor = config["embedding"]["early_exaggeration_factor"]
             momentum_early = config["embedding"]["momentum_early"]
             momentum_main = config["embedding"]["momentum_main"]
+            centering_weight = config["embedding"].get("centering_weight", 0.0)
+            scaling_loss_type = ScalingLossType(
+                config["embedding"].get("scaling_loss_type", "hard_barrier")
+            )
 
             curvatures = config["experiments"]["curvatures"]
             if len(curvatures) == 0:
@@ -243,6 +247,8 @@ class TrainingManager:
                 momentum_main=momentum_main,
                 init_method=init_method,
                 init_scale=init_scale,
+                centering_weight=centering_weight,
+                scaling_loss_type=scaling_loss_type,
                 verbose=False,
                 callback=self._training_callback,
                 precomputed_distances=precomputed_distances,

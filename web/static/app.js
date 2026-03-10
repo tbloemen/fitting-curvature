@@ -36,6 +36,8 @@
     early_exag_factor: document.getElementById("cfg-early-exag-factor"),
     momentum_early: document.getElementById("cfg-momentum-early"),
     momentum_main: document.getElementById("cfg-momentum-main"),
+    centering_weight: document.getElementById("cfg-centering-weight"),
+    scaling_loss_type: document.getElementById("cfg-scaling-loss-type"),
     learning_rate: document.getElementById("cfg-learning-rate"),
     init_scale: document.getElementById("cfg-init-scale"),
     curvature: document.getElementById("cfg-curvature"),
@@ -54,6 +56,9 @@
     fields.early_exag_factor.value = config.embedding.early_exaggeration_factor;
     fields.momentum_early.value = config.embedding.momentum_early;
     fields.momentum_main.value = config.embedding.momentum_main;
+    fields.centering_weight.value = config.embedding.centering_weight || 0;
+    fields.scaling_loss_type.value =
+      config.embedding.scaling_loss_type || "hard_barrier";
 
     var lr = config.hyperparameters.learning_rates;
     fields.learning_rate.value = lr.k || lr[Object.keys(lr)[0]] || 200;
@@ -86,6 +91,8 @@
         early_exaggeration_factor: parseFloat(fields.early_exag_factor.value),
         momentum_early: parseFloat(fields.momentum_early.value),
         momentum_main: parseFloat(fields.momentum_main.value),
+        centering_weight: parseFloat(fields.centering_weight.value),
+        scaling_loss_type: fields.scaling_loss_type.value,
       },
       hyperparameters: {
         learning_rates: {

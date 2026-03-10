@@ -15,7 +15,7 @@ from abc import ABC, abstractmethod
 import torch
 from torch import Tensor
 
-from src.types import InitMethod
+from src.types import InitMethod, ScalingLossType
 
 
 def _pca_init(
@@ -208,6 +208,24 @@ class Manifold(ABC):
         pass
 
     @abstractmethod
+    def center(self, points: Tensor) -> Tensor:
+        """
+        Center points so the Fréchet mean lies at the manifold origin,
+        without rescaling.
+        """
+        pass
+
+    @abstractmethod
+    def scaling_loss(self, points: Tensor) -> Tensor:
+        """
+        Differentiable loss penalizing RMS geodesic distance from origin
+        deviating from 1.
+
+        Returns a scalar loss: (RMS_geodesic_dist - 1)^2
+        """
+        pass
+
+    @abstractmethod
     def ambient_dim_for_embed_dim(self, embed_dim: int) -> int:
         """
         Return ambient dimension for given embedding dimension.
@@ -233,6 +251,16 @@ class Euclidean(Manifold):
         if abs(curvature) > 1e-10:
             raise ValueError("Euclidean manifold requires curvature = 0")
         super().__init__(0.0)
+
+    def center(self, points: Tensor) -> Tensor:
+        """Center points at origin."""
+        mean = points.mean(dim=0, keepdim=True)
+        return points - mean
+
+    def scaling_loss(self, points: Tensor) -> Tensor:
+        """Scaling loss for Euclidean space: (RMS_dist - 1)^2."""
+        rms = torch.sqrt((points**2).sum(dim=1).mean())
+        return (rms - 1.0) ** 2
 
     def init_points(
         self,
@@ -312,6 +340,14 @@ class Sphere(Manifold):
         if curvature <= 0:
             raise ValueError("Spherical manifold requires curvature > 0")
         super().__init__(curvature)
+
+    def center(self, points: Tensor) -> Tensor:
+        """No-op: centering on the sphere is a rotation (isometry), doesn't affect KL loss."""
+        return points
+
+    def scaling_loss(self, points: Tensor) -> Tensor:
+        """No-op: scaling is constrained by the compact geometry of the sphere."""
+        return torch.tensor(0.0, device=points.device, dtype=points.dtype)
 
     def init_points(
         self,
@@ -441,7 +477,11 @@ class Sphere(Manifold):
 class Hyperboloid(Manifold):
     """Hyperbolic manifold (k<0), hyperboloid model in R^(d+1)."""
 
-    def __init__(self, curvature: float):
+    def __init__(
+        self,
+        curvature: float,
+        scaling_loss_type: ScalingLossType = ScalingLossType.HARD_BARRIER,
+    ):
         """
         Initialize hyperbolic manifold.
 
@@ -449,6 +489,8 @@ class Hyperboloid(Manifold):
         ----------
         curvature : float
             Curvature k < 0. Points lie on hyperboloid in R^(d+1)
+        scaling_loss_type : ScalingLossType
+            Strategy for the scaling regularization loss.
 
         Notes
         -----
@@ -458,6 +500,63 @@ class Hyperboloid(Manifold):
         if curvature >= 0:
             raise ValueError("Hyperbolic manifold requires curvature < 0")
         super().__init__(curvature)
+        self.scaling_loss_type = scaling_loss_type
+
+    def center(self, points: Tensor) -> Tensor:
+        """Center points so Fréchet mean is at origin (r, 0, ..., 0)."""
+        r = self.radius
+        r_sq = self.radius_squared
+
+        mean = points.mean(dim=0)
+        lorentz_sq = -(mean[0] ** 2) + (mean[1:] ** 2).sum()
+        if lorentz_sq >= 0:
+            raise ValueError(
+                f"The lorentz square was positive, while it should have been equal to -{r_sq}"
+            )
+        scale = r / torch.sqrt(-lorentz_sq)
+        frechet_mean = mean * scale
+
+        mu_spatial = frechet_mean[1:]
+        mu_spatial_norm = torch.norm(mu_spatial)
+
+        if mu_spatial_norm > 1e-10:
+            n_dir = mu_spatial / mu_spatial_norm
+            cosh_alpha = frechet_mean[0] / r
+            sinh_alpha = mu_spatial_norm / r
+
+            x0 = points[:, 0]
+            x_par = points[:, 1:] @ n_dir
+            x_perp = points[:, 1:] - x_par.unsqueeze(1) * n_dir.unsqueeze(0)
+
+            new_x0 = cosh_alpha * x0 - sinh_alpha * x_par
+            new_x_par = -sinh_alpha * x0 + cosh_alpha * x_par
+            new_spatial = x_perp + new_x_par.unsqueeze(1) * n_dir.unsqueeze(0)
+
+            points = torch.cat([new_x0.unsqueeze(1), new_spatial], dim=1)
+
+        return points
+
+    def scaling_loss(self, points: Tensor) -> Tensor:
+        """Scaling regularization loss, strategy depends on scaling_loss_type."""
+        r = self.radius
+        x0 = points[:, 0]
+        alpha = torch.acosh(torch.clamp(x0 / r, min=1.0 + 1e-7))
+        geodesic_dist = r * alpha
+
+        if self.scaling_loss_type == ScalingLossType.RMS:
+            rms = torch.sqrt(torch.mean(geodesic_dist**2))
+            return (rms - 1.0) ** 2
+        elif self.scaling_loss_type == ScalingLossType.HARD_BARRIER:
+            d_max = 3.0 * r
+            excess = torch.relu(geodesic_dist - d_max)
+            return torch.mean(excess**2)
+        elif self.scaling_loss_type == ScalingLossType.SOFTPLUS_BARRIER:
+            d_max = 3.0 * r
+            return torch.mean(torch.nn.functional.softplus(geodesic_dist - d_max))
+        elif self.scaling_loss_type == ScalingLossType.MEAN_DISTANCE:
+            return torch.mean(geodesic_dist)
+        else:
+            return torch.tensor(0.0, device=points.device, dtype=points.dtype)
 
     def init_points(
         self,

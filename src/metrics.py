@@ -399,11 +399,11 @@ def class_density_measure(
 
     # CDM: sum of absolute differences between all class pairs
     cdm = 0.0
-    for k in range(M - 1):
-        for l in range(k + 1, M):
-            cdm += np.sum(np.abs(density_images[k] - density_images[l]))
+    for ki in range(M - 1):
+        for kj in range(ki + 1, M):
+            cdm += np.sum(np.abs(density_images[ki] - density_images[kj]))
 
-    return float(cdm)
+    return float(cdm / grid_size**2)
 
 
 def cluster_density_measure(
@@ -451,10 +451,10 @@ def cluster_density_measure(
     radii = np.maximum(radii, 1e-12)
 
     cldm = 0.0
-    for k in range(K):
-        for l in range(k + 1, K):
-            d_kl = np.linalg.norm(centroids[k] - centroids[l])
-            cldm += d_kl**2 / (radii[k] * radii[l])
+    for ki in range(K):
+        for kj in range(ki + 1, K):
+            d_kikj = np.linalg.norm(centroids[ki] - centroids[kj])
+            cldm += d_kikj**2 / (radii[ki] * radii[kj])
 
     return float(cldm / K)
 
